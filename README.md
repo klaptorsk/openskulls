@@ -24,7 +24,7 @@ npx openskulls@latest init
 **Shell one-liner** (installs via npm, with Node.js version check):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh
+curl -fsSL https://raw.github.com/klaptorsk/openskulls/main/install.sh | sh
 ```
 
 ---
