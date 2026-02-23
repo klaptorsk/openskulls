@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # OpenSkulls installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/openskulls/openskulls/main/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh
 
 set -e
 
