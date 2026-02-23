@@ -4,7 +4,7 @@
   "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
   "type": "module",
   "bin": {
-    "openskulls": "./dist/index.js"
+    "openskulls": "dist/index.js"
   },
   "files": [
     "dist",
@@ -38,7 +38,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/klaptorsk/openskulls.git"
+    "url": "git+https://github.com/klaptorsk/openskulls.git"
   },
   "homepage": "https://github.com/klaptorsk/openskulls#readme",
   "bugs": {
