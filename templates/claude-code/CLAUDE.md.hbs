@@ -1,0 +1,101 @@
+{{!-- CLAUDE.md template for the Claude Code generator.
+      Sections tagged with <!-- openskulls:section:<id> --> are auto-managed.
+      Sections without a tag are preserved across regenerations. --}}
+# {{repoName}}
+
+<!-- openskulls:section:overview -->
+## Project Overview
+
+{{#if architectureStyle}}{{capitalize architectureStyle}} application.{{/if}}
+{{#if primaryLanguage}}Primary language: **{{primaryLanguage}}**{{#if primaryFramework}} / **{{primaryFramework}}**{{/if}}.{{/if}}
+
+<!-- /openskulls:section:overview -->
+
+<!-- openskulls:section:tech_stack -->
+## Tech Stack
+
+{{#each languages}}
+- **{{this.name}}**{{#if this.version}} {{this.version}}{{/if}}{{#if this.primary}} *(primary)*{{/if}} — {{this.percentage}}% of source files
+{{/each}}
+{{#if frameworks.length}}
+### Frameworks & Libraries
+{{#each frameworks}}
+- **{{this.name}}**{{#if this.version}} {{this.version}}{{/if}} ({{this.category}})
+{{/each}}
+{{/if}}
+
+<!-- /openskulls:section:tech_stack -->
+
+<!-- openskulls:section:architecture -->
+## Architecture
+
+**Style**: {{architectureStyle}}
+{{#if apiStyle}}**API**: {{uppercase apiStyle}}{{/if}}
+{{#if database}}**Database**: {{database}}{{/if}}
+{{#if entryPoints.length}}
+**Entry points**:
+{{#each entryPoints}}
+- `{{this}}`
+{{/each}}
+{{/if}}
+{{#if moduleStructure.length}}
+**Module structure**:
+{{#each moduleStructure}}
+- `{{this}}/`
+{{/each}}
+{{/if}}
+
+<!-- /openskulls:section:architecture -->
+
+<!-- openskulls:section:conventions -->
+## Conventions
+
+{{#if conventions.length}}
+{{#each conventions}}
+- **{{titlecase this.name}}**: `{{this.value}}`{{#if (eq this.confidence "low")}} *(inferred — verify)*{{/if}}
+{{/each}}
+{{else}}
+No conventions detected automatically. Add them here manually.
+{{/if}}
+{{#if lintingTools}}
+**Linting/Formatting**: {{join lintingTools ", "}}
+{{/if}}
+
+<!-- /openskulls:section:conventions -->
+
+{{#if testing}}
+<!-- openskulls:section:testing -->
+## Testing
+
+- **Framework**: {{testing.framework}}
+{{#if testing.pattern}}- **Pattern**: `{{testing.pattern}}`{{/if}}
+{{#if testing.coverageTool}}- **Coverage**: {{testing.coverageTool}}{{/if}}
+
+<!-- /openskulls:section:testing -->
+{{/if}}
+
+{{#if cicd}}
+<!-- openskulls:section:cicd -->
+## CI/CD
+
+- **Platform**: {{titlecase cicd.platform}}
+{{#if cicd.deployTargets.length}}- **Deploy targets**: {{join cicd.deployTargets ", "}}{{/if}}
+
+<!-- /openskulls:section:cicd -->
+{{/if}}
+
+{{#each packageSections}}
+<!-- openskulls:section:pkg_{{this.id}} -->
+{{this.content}}
+<!-- /openskulls:section:pkg_{{this.id}} -->
+{{/each}}
+
+<!-- openskulls:section:agent_guidance -->
+## Agent Guidance
+
+{{#if isConventionalCommits}}- Use [Conventional Commits](https://www.conventionalcommits.org/) format for all commit messages.{{/if}}
+- Before making changes, read the relevant module's code to understand existing patterns.
+- Run the test suite before proposing a commit.
+- Do not modify files outside the scope of the current task.
+
+<!-- /openskulls:section:agent_guidance -->

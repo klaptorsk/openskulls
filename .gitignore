@@ -1,0 +1,27 @@
+# Build output
+dist/
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Dependencies
+node_modules/
+
+# Testing
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/settings.json
+.idea/
+
+# OpenSkulls personal config (never committed)
+.openskulls/personal.json
+.openskulls/cache/

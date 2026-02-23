@@ -1,0 +1,51 @@
+{
+  "name": "openskulls",
+  "version": "0.1.0",
+  "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
+  "type": "module",
+  "bin": {
+    "openskulls": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "install.sh"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint 'src/**/*.ts'",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "handlebars": "^4.7.8",
+    "ora": "^8.1.0",
+    "simple-git": "^3.25.0",
+    "smol-toml": "^1.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "developer-tools",
+    "claude",
+    "context",
+    "agentic"
+  ],
+  "license": "MIT"
+}
