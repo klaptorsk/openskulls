@@ -14,3 +14,7 @@
     7.3. font color in terminal should be bloody red 
     7.3  add claude code or openclaw like header when starting up with some nift in terminal picture art - free style here. 
 10. our aim is to build a nice workflow for a developer of any kind and assits the developer with nice agentic engineering processes and practices we need to brainstorm this. maybe this workflow should be optional in init so we dont enforce but add as an option. 
+11. add hooks support for workflow
+0. create PRD.md
+
+
