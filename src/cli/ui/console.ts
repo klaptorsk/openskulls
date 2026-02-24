@@ -136,6 +136,35 @@ export function divider(width = 60): void {
   console.log(chalk.dim('─'.repeat(width)))
 }
 
+// ─── Verbose AI block ─────────────────────────────────────────────────────────
+
+const VERBOSE_MAX_LINES = 60
+const VERBOSE_WIDTH = 72
+
+/**
+ * Display an AI prompt or raw response in a dim bordered block.
+ * Long content is truncated; the omitted line count is shown at the bottom.
+ */
+export function verboseBlock(title: string, content: string): void {
+  const lines = content.split('\n')
+  const total = lines.length
+  const shown = lines.slice(0, VERBOSE_MAX_LINES)
+  const omitted = total - shown.length
+
+  const bar = chalk.dim('─'.repeat(VERBOSE_WIDTH))
+  const label = chalk.dim(`── ${title} `) + chalk.dim('─'.repeat(Math.max(0, VERBOSE_WIDTH - title.length - 4)))
+
+  console.log(label)
+  for (const line of shown) {
+    console.log(chalk.dim(line.length > VERBOSE_WIDTH ? line.slice(0, VERBOSE_WIDTH - 1) + '…' : line))
+  }
+  if (omitted > 0) {
+    console.log(chalk.dim(`── … ${omitted} more lines `) + chalk.dim('─'.repeat(Math.max(0, VERBOSE_WIDTH - String(omitted).length - 16))))
+  }
+  console.log(bar)
+  console.log()
+}
+
 // ─── Error handling ───────────────────────────────────────────────────────────
 
 export function fatal(message: string, hint?: string): never {

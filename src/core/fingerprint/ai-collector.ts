@@ -91,10 +91,26 @@ export const AIAnalysisResponse = z.object({
 })
 export type AIAnalysisResponse = z.infer<typeof AIAnalysisResponse>
 
+// ─── Verbose logger ───────────────────────────────────────────────────────────
+
+/**
+ * Optional observer for AI calls. Callbacks are fired synchronously inside
+ * invokeAICLI — callers should store the values and display them after any
+ * spinner has settled to avoid interleaved terminal output.
+ */
+export interface VerboseLogger {
+  onPrompt(prompt: string): void
+  onResponse(response: string): void
+}
+
 // ─── Collector ────────────────────────────────────────────────────────────────
 
 export class AIFingerprintCollector {
-  async collect(repoRoot: string, config?: Partial<ProjectConfig>): Promise<RepoFingerprint> {
+  async collect(
+    repoRoot: string,
+    config?: Partial<ProjectConfig>,
+    logger?: VerboseLogger,
+  ): Promise<RepoFingerprint> {
     const excludeSet = new Set([
       ...DEFAULT_EXCLUDE,
       ...(config?.excludePaths ?? []),
@@ -114,7 +130,7 @@ export class AIFingerprintCollector {
 
     // Step 5: Build prompt and invoke AI
     const prompt = buildAnalysisPrompt(basename(repoRoot), fileTree, configContents)
-    const rawResponse = await invokeAICLI(cliCommand, prompt)
+    const rawResponse = await invokeAICLI(cliCommand, prompt, 120_000, logger)
 
     // Step 6: Parse + Zod-validate response
     const analysis = AIAnalysisResponse.parse(JSON.parse(stripJsonFences(rawResponse)))
@@ -180,7 +196,10 @@ export async function invokeAICLI(
   command: string,
   prompt: string,
   timeoutMs = 120_000,
+  logger?: VerboseLogger,
 ): Promise<string> {
+  logger?.onPrompt(prompt)
+
   return new Promise((resolve, reject) => {
     const child = spawn(command, ['-p', '-'])
     let out = ''
@@ -202,8 +221,12 @@ export async function invokeAICLI(
 
     child.on('close', (code: number | null) => {
       clearTimeout(timer)
-      if (code === 0) resolve(out)
-      else reject(new Error(`${command} exited ${String(code)}: ${err}`))
+      if (code === 0) {
+        logger?.onResponse(out)
+        resolve(out)
+      } else {
+        reject(new Error(`${command} exited ${String(code)}: ${err}`))
+      }
     })
 
     child.stdin.write(prompt)

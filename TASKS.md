@@ -14,6 +14,7 @@
 
 | # | Task | Status |
 |---|---|---|
+| I-1 | Let the underlying AI text prompt output be visible by going in verbose by clicking ctrl-o similar to claude, we should be able to see it | ✅ Done |
 | R-1 | Generator refactor — extract shared helpers (`STYLE_LABELS`, `isConventionalCommits()`, `buildWorkflowRules()`) from both generators into `base.ts` or a new `shared.ts` | ⬜ Pending |
 | R-2 | Generator registry — add `src/core/generators/registry.ts` with `getBuiltinGenerators()`, handling always-on vs detection-based generators | ⬜ Pending |
 | R-3 | Wire registry into CLI — replace hardcoded generator instantiation in `init.ts` and `sync.ts` (3 call sites) with registry lookup | ⬜ Pending |

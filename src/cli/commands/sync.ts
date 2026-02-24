@@ -22,7 +22,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import type { Command } from 'commander'
-import { AIFingerprintCollector } from '../../core/fingerprint/ai-collector.js'
+import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { loadFingerprint, saveFingerprint } from '../../core/fingerprint/cache.js'
 import { hasDrifted } from '../../core/fingerprint/types.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
@@ -31,7 +31,7 @@ import { CopilotGenerator } from '../../core/generators/copilot.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
 import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
 import {
-  divider, fatal, fileList, heading, log, spinner,
+  divider, fatal, fileList, heading, log, spinner, verboseBlock,
 } from '../ui/console.js'
 import { writeGeneratedFile } from './shared.js'
 import { shouldTriggerSync } from './hook.js'
@@ -66,11 +66,12 @@ export function registerSync(program: Command): void {
     .description('Update AI context files after code changes')
     .option('-n, --dry-run', 'Show what would be generated without writing files')
     .option('-y, --yes', 'Skip confirmation prompts')
+    .option('-v, --verbose', 'Print AI prompts and raw responses')
     .option('--hook', 'Running from a git hook — suppress interactive output', false)
     .option('--changed <files>', 'Newline-separated changed files (from hook)')
     .action(async (
       path: string = '.',
-      options: { dryRun?: boolean; yes?: boolean; hook?: boolean; changed?: string },
+      options: { dryRun?: boolean; yes?: boolean; verbose?: boolean; hook?: boolean; changed?: string },
     ) => {
       if (options.hook) {
         await hookMode(path, options.changed ?? '')
@@ -84,7 +85,7 @@ export function registerSync(program: Command): void {
 
 async function interactiveMode(
   path: string,
-  options: { dryRun?: boolean; yes?: boolean },
+  options: { dryRun?: boolean; yes?: boolean; verbose?: boolean },
 ): Promise<void> {
   const repoRoot = resolve(path)
 
@@ -100,9 +101,14 @@ async function interactiveMode(
   const spin = spinner('Analysing repository…').start()
 
   let fingerprint
+  const analysisCapture = { prompt: '', response: '' }
   try {
     const collector = new AIFingerprintCollector()
-    fingerprint = await collector.collect(repoRoot)
+    const analysisLogger: VerboseLogger = {
+      onPrompt:   (p) => { analysisCapture.prompt = p },
+      onResponse: (r) => { analysisCapture.response = r },
+    }
+    fingerprint = await collector.collect(repoRoot, undefined, analysisLogger)
     spin.succeed('Repository analysed')
   } catch (err) {
     spin.fail('Analysis failed')
@@ -110,6 +116,10 @@ async function interactiveMode(
       `Could not analyse ${repoRoot}`,
       err instanceof Error ? err.message : String(err),
     )
+  }
+  if (options.verbose) {
+    verboseBlock('Analysis prompt', analysisCapture.prompt)
+    verboseBlock('Analysis response', analysisCapture.response)
   }
 
   // ── Step 3: Drift check ──────────────────────────────────────────────────
@@ -123,13 +133,22 @@ async function interactiveMode(
 
   const skillsSpin = spinner('Generating project skills…').start()
   let aiSkills: AISkill[] = []
+  const skillsCapture = { prompt: '', response: '' }
   try {
-    aiSkills = await generateAISkills(fingerprint)
+    const skillsLogger: VerboseLogger = {
+      onPrompt:   (p) => { skillsCapture.prompt = p },
+      onResponse: (r) => { skillsCapture.response = r },
+    }
+    aiSkills = await generateAISkills(fingerprint, skillsLogger)
     skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
   } catch (err) {
     skillsSpin.warn('Could not generate skills — skipping')
     log.info(err instanceof Error ? err.message : String(err))
     // Non-fatal: sync continues without skills
+  }
+  if (options.verbose) {
+    verboseBlock('Skills prompt', skillsCapture.prompt)
+    verboseBlock('Skills response', skillsCapture.response)
   }
 
   // ── Step 4: Generate files ───────────────────────────────────────────────

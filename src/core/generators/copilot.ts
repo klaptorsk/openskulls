@@ -10,16 +10,7 @@
 import type { WorkflowConfig } from '../config/types.js'
 import type { RepoFingerprint } from '../fingerprint/types.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
-
-// ─── Architecture style labels ────────────────────────────────────────────────
-
-const STYLE_LABELS: Record<string, string> = {
-  cli:           'CLI tool',
-  library:       'Library',
-  monolith:      'Monolith',
-  monorepo:      'Monorepo',
-  microservices: 'Microservices',
-}
+import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines } from './shared.js'
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
@@ -117,17 +108,7 @@ export function buildCopilotInstructions(
   // ── Workflow rules ───────────────────────────────────────────────────────────
 
   if (workflow) {
-    const workflowLines: string[] = []
-    if (workflow.autoDocs === 'always') {
-      workflowLines.push('- **Documentation**: After adding or updating a feature, always update README.md and any relevant documentation files before marking the task complete.')
-    } else if (workflow.autoDocs === 'ask') {
-      workflowLines.push('- **Documentation**: After adding or updating a feature, ask the user whether documentation should be updated before finishing.')
-    }
-    if (workflow.autoCommit === 'always') {
-      workflowLines.push('- **Commits**: After completing a feature or fix, stage the relevant changed files and create a git commit with an appropriate message.')
-    } else if (workflow.autoCommit === 'ask') {
-      workflowLines.push('- **Commits**: After completing a task, ask the user if they want to commit the changes.')
-    }
+    const workflowLines = buildWorkflowRuleLines(workflow)
     if (workflowLines.length > 0) {
       lines.push('<!-- openskulls:section:workflow_rules -->')
       lines.push('## Workflow rules')
@@ -143,10 +124,7 @@ export function buildCopilotInstructions(
   lines.push('<!-- openskulls:section:agent_guidance -->')
   lines.push('## Agent guidance')
   lines.push('')
-  const isConventionalCommits =
-    fp.git?.commitStyle === 'conventional_commits' ||
-    fp.conventions.some((c) => c.name === 'conventional_commits')
-  if (isConventionalCommits) {
+  if (isConventionalCommits(fp)) {
     lines.push('- Use [Conventional Commits](https://www.conventionalcommits.org/) format for all commit messages.')
   }
   lines.push("- Before making changes, read the relevant module's code to understand existing patterns.")

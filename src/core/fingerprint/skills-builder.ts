@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod'
-import { detectAICLI, invokeAICLI, stripJsonFences } from './ai-collector.js'
+import { detectAICLI, invokeAICLI, stripJsonFences, type VerboseLogger } from './ai-collector.js'
 import { buildSkillsPrompt } from './skills-prompt.js'
 import type { RepoFingerprint } from './types.js'
 
@@ -28,10 +28,13 @@ export type AISkillsResponse = z.infer<typeof AISkillsResponse>
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
-export async function generateAISkills(fingerprint: RepoFingerprint): Promise<AISkill[]> {
+export async function generateAISkills(
+  fingerprint: RepoFingerprint,
+  logger?: VerboseLogger,
+): Promise<AISkill[]> {
   const cliCommand = await detectAICLI()
   const prompt = buildSkillsPrompt(fingerprint)
-  const raw = await invokeAICLI(cliCommand, prompt)
+  const raw = await invokeAICLI(cliCommand, prompt, 120_000, logger)
   const parsed = AISkillsResponse.parse(JSON.parse(stripJsonFences(raw)))
   return parsed.skills
 }

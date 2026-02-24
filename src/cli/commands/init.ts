@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { stringify as tomlStringify } from 'smol-toml'
 import type { Command } from 'commander'
-import { AIFingerprintCollector } from '../../core/fingerprint/ai-collector.js'
+import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
@@ -26,7 +26,7 @@ import { CopilotGenerator } from '../../core/generators/copilot.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
 import { defaultProjectConfig, defaultGlobalConfig, type WorkflowConfig } from '../../core/config/types.js'
 import {
-  banner, divider, fatal, fileList, heading, log, spinner, subheading, table,
+  banner, divider, fatal, fileList, heading, log, spinner, subheading, table, verboseBlock,
 } from '../ui/console.js'
 import { writeGeneratedFile } from './shared.js'
 import { installGitHook } from './hook.js'
@@ -40,9 +40,10 @@ export function registerInit(program: Command): void {
     .description('Analyse a repository and generate AI context files')
     .option('-n, --dry-run', 'Show what would be generated without writing files')
     .option('-y, --yes', 'Skip confirmation prompts')
+    .option('-v, --verbose', 'Print AI prompts and raw responses')
     .action(async (
       path: string = '.',
-      options: { dryRun?: boolean; yes?: boolean },
+      options: { dryRun?: boolean; yes?: boolean; verbose?: boolean },
     ) => {
       const repoRoot = resolve(path)
 
@@ -53,9 +54,14 @@ export function registerInit(program: Command): void {
       const spin = spinner('Analysing repository…').start()
 
       let fingerprint
+      const analysisCapture = { prompt: '', response: '' }
       try {
         const collector = new AIFingerprintCollector()
-        fingerprint = await collector.collect(repoRoot)
+        const analysisLogger: VerboseLogger = {
+          onPrompt:   (p) => { analysisCapture.prompt = p },
+          onResponse: (r) => { analysisCapture.response = r },
+        }
+        fingerprint = await collector.collect(repoRoot, undefined, analysisLogger)
         spin.succeed('Repository analysed')
       } catch (err) {
         spin.fail('Analysis failed')
@@ -64,18 +70,31 @@ export function registerInit(program: Command): void {
           err instanceof Error ? err.message : String(err),
         )
       }
+      if (options.verbose) {
+        verboseBlock('Analysis prompt', analysisCapture.prompt)
+        verboseBlock('Analysis response', analysisCapture.response)
+      }
 
       // ── Step 1b: Generate AI skills ──────────────────────────────────────
 
       const skillsSpin = spinner('Generating project skills…').start()
       let aiSkills: AISkill[] = []
+      const skillsCapture = { prompt: '', response: '' }
       try {
-        aiSkills = await generateAISkills(fingerprint)
+        const skillsLogger: VerboseLogger = {
+          onPrompt:   (p) => { skillsCapture.prompt = p },
+          onResponse: (r) => { skillsCapture.response = r },
+        }
+        aiSkills = await generateAISkills(fingerprint, skillsLogger)
         skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
       } catch (err) {
         skillsSpin.warn('Could not generate skills — skipping')
         log.info(err instanceof Error ? err.message : String(err))
         // Non-fatal: init continues without skills
+      }
+      if (options.verbose) {
+        verboseBlock('Skills prompt', skillsCapture.prompt)
+        verboseBlock('Skills response', skillsCapture.response)
       }
 
       // ── Step 2: Show detected signals ────────────────────────────────────

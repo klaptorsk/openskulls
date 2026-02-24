@@ -17,8 +17,8 @@ import Handlebars from 'handlebars'
 import { skillsForTool } from '../packages/types.js'
 import { type RepoFingerprint } from '../fingerprint/types.js'
 import { type AISkill } from '../fingerprint/skills-builder.js'
-import { type WorkflowConfig } from '../config/types.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
+import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines } from './shared.js'
 
 // ─── Template loading ─────────────────────────────────────────────────────────
 
@@ -58,16 +58,6 @@ hbs.registerHelper('eq', (a: unknown, b: unknown) => a === b)
 
 const COMPILED_TEMPLATE = hbs.compile(TEMPLATE_SOURCE)
 
-// ─── Architecture style labels ────────────────────────────────────────────────
-
-const STYLE_LABELS: Record<string, string> = {
-  cli: 'CLI tool',
-  library: 'Library',
-  monolith: 'Monolith',
-  monorepo: 'Monorepo',
-  microservices: 'Microservices',
-}
-
 // ─── Template context ─────────────────────────────────────────────────────────
 
 interface TemplateContext {
@@ -92,26 +82,6 @@ interface TemplateContext {
   workflowRules: string
 }
 
-// ─── Workflow rules builder ───────────────────────────────────────────────────
-
-function buildWorkflowRulesContent(config: WorkflowConfig): string {
-  const lines: string[] = []
-
-  if (config.autoDocs === 'always') {
-    lines.push('- **Documentation**: After adding or updating a feature, always update README.md and any relevant documentation files before marking the task complete.')
-  } else if (config.autoDocs === 'ask') {
-    lines.push('- **Documentation**: After adding or updating a feature, ask the user whether documentation (README.md, docs/) should be updated before finishing.')
-  }
-
-  if (config.autoCommit === 'always') {
-    lines.push('- **Commits**: After completing a feature or fix, stage the relevant changed files and create a git commit with an appropriate message.')
-  } else if (config.autoCommit === 'ask') {
-    lines.push('- **Commits**: After completing a task, ask the user if they want to commit the changes.')
-  }
-
-  return lines.join('\n')
-}
-
 // ─── Generator ────────────────────────────────────────────────────────────────
 
 export class ClaudeCodeGenerator extends BaseGenerator {
@@ -130,9 +100,7 @@ export class ClaudeCodeGenerator extends BaseGenerator {
       Object.entries(pkg.contextSections).map(([id, content]) => ({ id, content })),
     )
 
-    const isConventionalCommits =
-      fingerprint.git?.commitStyle === 'conventional_commits' ||
-      fingerprint.conventions.some((c) => c.name === 'conventional_commits')
+    const conventionalCommits = isConventionalCommits(fingerprint)
 
     const ctx: TemplateContext = {
       repoName: fingerprint.repoName,
@@ -153,8 +121,8 @@ export class ClaudeCodeGenerator extends BaseGenerator {
       testing: fingerprint.testing,
       cicd: fingerprint.cicd,
       packageSections,
-      isConventionalCommits,
-      workflowRules: input.workflowConfig ? buildWorkflowRulesContent(input.workflowConfig) : '',
+      isConventionalCommits: conventionalCommits,
+      workflowRules: input.workflowConfig ? buildWorkflowRuleLines(input.workflowConfig).join('\n') : '',
     }
 
     files.push(repoFile('CLAUDE.md', COMPILED_TEMPLATE(ctx), 'merge_sections'))
@@ -162,7 +130,7 @@ export class ClaudeCodeGenerator extends BaseGenerator {
     // ── .claude/commands/<id>.md ────────────────────────────────────────────
 
     // Built-in skills first (installed packages can override by providing a skill with the same id)
-    for (const f of this.generateBuiltinSkills(fingerprint, isConventionalCommits)) {
+    for (const f of this.generateBuiltinSkills(fingerprint, conventionalCommits)) {
       files.push(f)
     }
 
