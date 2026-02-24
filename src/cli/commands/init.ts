@@ -22,7 +22,8 @@ import { AIFingerprintCollector } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
-import { resolveFilePath } from '../../core/generators/base.js'
+import { CopilotGenerator } from '../../core/generators/copilot.js'
+import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
 import { defaultProjectConfig, defaultGlobalConfig, type WorkflowConfig } from '../../core/config/types.js'
 import {
   banner, divider, fatal, fileList, heading, log, spinner, subheading, table,
@@ -148,15 +149,23 @@ export function registerInit(program: Command): void {
       const projectConfig = defaultProjectConfig()
       const globalConfig  = defaultGlobalConfig()
 
-      const gen = new ClaudeCodeGenerator()
-      const generatedFiles = gen.generate({
+      const generatorInput = {
         fingerprint,
         installedPackages: [],
         projectConfig,
         globalConfig,
         aiSkills,
         workflowConfig,
-      })
+      }
+
+      const generatedFiles: GeneratedFile[] = [
+        ...new ClaudeCodeGenerator().generate(generatorInput),
+      ]
+
+      const detectedTools = fingerprint.aiCLIs.map((a) => a.tool)
+      if (detectedTools.includes('copilot')) {
+        generatedFiles.push(...new CopilotGenerator().generate(generatorInput))
+      }
 
       // ── Step 4: Show generation plan ─────────────────────────────────────
 
@@ -203,7 +212,7 @@ export function registerInit(program: Command): void {
       await saveFingerprint(repoRoot, fingerprint)
       log.success(`Saved .openskulls/fingerprint.json`)
 
-      await saveConfig(repoRoot, workflowConfig)
+      await saveConfig(repoRoot, workflowConfig, detectedTools)
       log.success(`Saved .openskulls/config.toml`)
 
       // ── Step 8: Install git hook ──────────────────────────────────────────
@@ -231,11 +240,21 @@ export function registerInit(program: Command): void {
 
 // ─── Config writer ────────────────────────────────────────────────────────────
 
-async function saveConfig(repoRoot: string, workflowConfig: WorkflowConfig): Promise<void> {
+const ALL_TARGETS = ['claude_code', 'copilot'] as const
+
+async function saveConfig(
+  repoRoot: string,
+  workflowConfig: WorkflowConfig,
+  detectedTools: string[],
+): Promise<void> {
   const configPath = join(repoRoot, '.openskulls', 'config.toml')
+  const targets = ALL_TARGETS.map((name) => ({
+    name,
+    enabled: detectedTools.includes(name),
+  }))
   const configData = {
     schema_version: '1.0.0',
-    targets: [{ name: 'claude_code', enabled: true }],
+    targets,
     exclude_paths: [
       'node_modules', '.git', 'dist', 'build',
       '.venv', '__pycache__', '.next', '.nuxt', 'coverage',

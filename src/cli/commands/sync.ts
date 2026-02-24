@@ -27,7 +27,8 @@ import { loadFingerprint, saveFingerprint } from '../../core/fingerprint/cache.j
 import { hasDrifted } from '../../core/fingerprint/types.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
-import { resolveFilePath } from '../../core/generators/base.js'
+import { CopilotGenerator } from '../../core/generators/copilot.js'
+import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
 import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
 import {
   divider, fatal, fileList, heading, log, spinner,
@@ -136,14 +137,22 @@ async function interactiveMode(
   const projectConfig = defaultProjectConfig()
   const globalConfig  = defaultGlobalConfig()
 
-  const gen = new ClaudeCodeGenerator()
-  const generatedFiles = gen.generate({
+  const generatorInput = {
     fingerprint,
     installedPackages: [],
     projectConfig,
     globalConfig,
     aiSkills,
-  })
+  }
+
+  const generatedFiles: GeneratedFile[] = [
+    ...new ClaudeCodeGenerator().generate(generatorInput),
+  ]
+
+  const detectedTools = fingerprint.aiCLIs.map((a) => a.tool)
+  if (detectedTools.includes('copilot')) {
+    generatedFiles.push(...new CopilotGenerator().generate(generatorInput))
+  }
 
   // ── Step 5: Show plan ────────────────────────────────────────────────────
 
@@ -229,14 +238,13 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     // Generate + write silently
     const projectConfig = defaultProjectConfig()
     const globalConfig  = defaultGlobalConfig()
-    const gen = new ClaudeCodeGenerator()
-    const generatedFiles = gen.generate({
-      fingerprint,
-      installedPackages: [],
-      projectConfig,
-      globalConfig,
-      aiSkills,
-    })
+    const generatorInput = { fingerprint, installedPackages: [], projectConfig, globalConfig, aiSkills }
+    const generatedFiles: GeneratedFile[] = [
+      ...new ClaudeCodeGenerator().generate(generatorInput),
+    ]
+    if (fingerprint.aiCLIs.some((a) => a.tool === 'copilot')) {
+      generatedFiles.push(...new CopilotGenerator().generate(generatorInput))
+    }
 
     const homeDir = homedir()
     for (const file of generatedFiles) {
