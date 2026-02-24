@@ -1,0 +1,6 @@
+schema_version = "1.0.0"
+exclude_paths = [ "node_modules", ".git", "dist", "build", ".venv", "__pycache__", ".next", ".nuxt", "coverage" ]
+
+[[targets]]
+name = "claude_code"
+enabled = true

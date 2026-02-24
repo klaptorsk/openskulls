@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { ClaudeCodeGenerator } from '../../src/core/generators/claude-code.js'
 import type { GeneratorInput } from '../../src/core/generators/base.js'
 import { createFingerprint } from '../../src/core/fingerprint/types.js'
+import type { AISkill } from '../../src/core/fingerprint/skills-builder.js'
 import { defaultProjectConfig, defaultGlobalConfig } from '../../src/core/config/types.js'
 import type { SkullPackage } from '../../src/core/packages/types.js'
 
@@ -447,6 +448,212 @@ describe('package context sections in CLAUDE.md', () => {
     const content = gen.generate(makeInput({ installedPackages: [pkg] }))[0].content
     expect(content).toContain('<!-- openskulls:section:pkg_my-section -->')
     expect(content).toContain('<!-- /openskulls:section:pkg_my-section -->')
+  })
+})
+
+// ─── Built-in skill files ─────────────────────────────────────────────────────
+
+describe('built-in skill files', () => {
+  it('generates run-tests.md when testing is detected', () => {
+    const fp = makeFingerprint({
+      testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
+    })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).toContain('.claude/commands/run-tests.md')
+  })
+
+  it('run-tests.md uses correct command for npm (default)', () => {
+    const fp = makeFingerprint({
+      testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
+    })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const runTests = files.find((f) => f.relativePath === '.claude/commands/run-tests.md')!
+    expect(runTests.content).toContain('npm test')
+  })
+
+  it('run-tests.md uses bun test when bun is the package manager', () => {
+    const fp = makeFingerprint({
+      testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
+      conventions: [{ name: 'package_manager', value: 'bun', confidence: 'high', evidence: [] }],
+    })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const runTests = files.find((f) => f.relativePath === '.claude/commands/run-tests.md')!
+    expect(runTests.content).toContain('bun test')
+  })
+
+  it('does not generate run-tests.md when testing is absent', () => {
+    const fp = makeFingerprint({ testing: undefined })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).not.toContain('.claude/commands/run-tests.md')
+  })
+
+  it('generates commit.md when conventional commits is detected via git signal', () => {
+    const fp = makeFingerprint({
+      git: { primaryBranch: 'main', contributorsCount: 1, commitStyle: 'conventional_commits' },
+    })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).toContain('.claude/commands/commit.md')
+  })
+
+  it('generates commit.md when conventional commits is detected via conventions array', () => {
+    const fp = makeFingerprint({
+      conventions: [
+        { name: 'conventional_commits', value: 'conventional', confidence: 'high', evidence: [] },
+      ],
+    })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).toContain('.claude/commands/commit.md')
+  })
+
+  it('does not generate commit.md when conventional commits is absent', () => {
+    const fp = makeFingerprint({ conventions: [], git: undefined })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).not.toContain('.claude/commands/commit.md')
+  })
+
+  it('run-tests.md uses frontmatter format with description', () => {
+    const fp = makeFingerprint({
+      testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
+    })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const runTests = files.find((f) => f.relativePath === '.claude/commands/run-tests.md')!
+    expect(runTests.content).toMatch(/^---\n/)
+    expect(runTests.content).toContain('description:')
+  })
+
+  it('commit.md uses frontmatter format and contains Conventional Commits guidance', () => {
+    const fp = makeFingerprint({
+      git: { primaryBranch: 'main', contributorsCount: 1, commitStyle: 'conventional_commits' },
+    })
+    const files = gen.generate(makeInput({ fingerprint: fp }))
+    const commitFile = files.find((f) => f.relativePath === '.claude/commands/commit.md')!
+    expect(commitFile.content).toMatch(/^---\n/)
+    expect(commitFile.content).toContain('description:')
+    expect(commitFile.content).toContain('Conventional Commits')
+    expect(commitFile.content).toContain('<type>(<scope>): <description>')
+  })
+})
+
+// ─── AI-generated skills ──────────────────────────────────────────────────────
+
+function makeSkill(overrides: Partial<AISkill> = {}): AISkill {
+  return {
+    id: 'add-feature',
+    title: 'Add a Feature',
+    description: 'Use when adding a new feature to the codebase. Triggers: new feature, implementation, add functionality.',
+    content: '# Add a Feature\n\nReference for adding new features.\n\n## Core Rules\n\n- Follow existing patterns\n- Write tests\n\n## Anti-Patterns\n\n- Do not skip tests\n\n## Checklist\n\n- [ ] Tests written\n- [ ] `npm test` passes',
+    category: 'workflow',
+    ...overrides,
+  }
+}
+
+describe('AI-generated skills', () => {
+  it('emits .claude/skills.md when aiSkills are provided', () => {
+    const files = gen.generate(makeInput({ aiSkills: [makeSkill()] }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).toContain('.claude/skills.md')
+  })
+
+  it('.claude/skills.md uses merge_sections strategy', () => {
+    const files = gen.generate(makeInput({ aiSkills: [makeSkill()] }))
+    const skillsMd = files.find((f) => f.relativePath === '.claude/skills.md')!
+    expect(skillsMd.mergeStrategy).toBe('merge_sections')
+  })
+
+  it('.claude/skills.md has openskulls section markers', () => {
+    const files = gen.generate(makeInput({ aiSkills: [makeSkill()] }))
+    const content = files.find((f) => f.relativePath === '.claude/skills.md')!.content
+    expect(content).toContain('<!-- openskulls:section:skills -->')
+    expect(content).toContain('<!-- /openskulls:section:skills -->')
+  })
+
+  it('emits a SKILL.md per AI skill at .claude/skills/<id>/SKILL.md', () => {
+    const skills: AISkill[] = [
+      makeSkill({ id: 'add-api-endpoint', title: 'Add API Endpoint', category: 'workflow' }),
+      makeSkill({ id: 'write-unit-test', title: 'Write Unit Test', category: 'testing' }),
+    ]
+    const files = gen.generate(makeInput({ aiSkills: skills }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).toContain('.claude/skills/add-api-endpoint/SKILL.md')
+    expect(paths).toContain('.claude/skills/write-unit-test/SKILL.md')
+  })
+
+  it('SKILL.md files use replace strategy', () => {
+    const files = gen.generate(makeInput({ aiSkills: [makeSkill({ id: 'my-skill' })] }))
+    const skillFile = files.find((f) => f.relativePath === '.claude/skills/my-skill/SKILL.md')!
+    expect(skillFile.mergeStrategy).toBe('replace')
+  })
+
+  it('SKILL.md has YAML frontmatter with name and description', () => {
+    const skill = makeSkill({
+      id: 'add-route',
+      description: 'Use when adding routes. Triggers: new route, handler.',
+    })
+    const files = gen.generate(makeInput({ aiSkills: [skill] }))
+    const content = files.find((f) => f.relativePath === '.claude/skills/add-route/SKILL.md')!.content
+    expect(content).toMatch(/^---\n/)
+    expect(content).toContain('name: add-route')
+    expect(content).toContain('description:')
+  })
+
+  it('SKILL.md body contains the generated content', () => {
+    const skill = makeSkill({
+      id: 'refactor-module',
+      title: 'Refactor a Module',
+      content: '# Refactor a Module\n\n## Core Rules\n\n- Read before editing',
+    })
+    const files = gen.generate(makeInput({ aiSkills: [skill] }))
+    const content = files.find((f) => f.relativePath === '.claude/skills/refactor-module/SKILL.md')!.content
+    expect(content).toContain('# Refactor a Module')
+    expect(content).toContain('## Core Rules')
+    expect(content).toContain('Read before editing')
+  })
+
+  it('skills.md includes skill title, invocation, and description', () => {
+    const skill = makeSkill({ id: 'add-route', title: 'Add a Route', description: 'Use when adding routes. Triggers: route.' })
+    const files = gen.generate(makeInput({ aiSkills: [skill] }))
+    const content = files.find((f) => f.relativePath === '.claude/skills.md')!.content
+    expect(content).toContain('Add a Route')
+    expect(content).toContain('/add-route')
+    expect(content).toContain('Use when adding routes.')
+  })
+
+  it('skills.md groups by category alphabetically', () => {
+    const skills: AISkill[] = [
+      makeSkill({ id: 'fix-bug', title: 'Fix a Bug', category: 'debugging' }),
+      makeSkill({ id: 'add-feature', title: 'Add a Feature', category: 'workflow' }),
+      makeSkill({ id: 'write-test', title: 'Write a Test', category: 'testing' }),
+    ]
+    const files = gen.generate(makeInput({ aiSkills: skills }))
+    const content = files.find((f) => f.relativePath === '.claude/skills.md')!.content
+    const debuggingPos = content.indexOf('## Debugging')
+    const testingPos = content.indexOf('## Testing')
+    const workflowPos = content.indexOf('## Workflow')
+    expect(debuggingPos).toBeLessThan(testingPos)
+    expect(testingPos).toBeLessThan(workflowPos)
+  })
+
+  it('does not emit .claude/skills.md when aiSkills is empty', () => {
+    const files = gen.generate(makeInput({ aiSkills: [] }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).not.toContain('.claude/skills.md')
+  })
+
+  it('does not emit .claude/skills.md when aiSkills is absent', () => {
+    const files = gen.generate(makeInput())
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).not.toContain('.claude/skills.md')
+  })
+
+  it('does not emit SKILL.md files when aiSkills is absent', () => {
+    const files = gen.generate(makeInput())
+    const skillFiles = files.filter((f) => f.relativePath.includes('/SKILL.md'))
+    expect(skillFiles).toHaveLength(0)
   })
 })
 

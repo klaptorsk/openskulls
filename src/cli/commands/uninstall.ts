@@ -18,8 +18,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { Command } from 'commander'
 import { divider, fatal, heading, log, panel } from '../ui/console.js'
-
-const HOOK_MARKER = '# managed by openskulls'
+import { HOOK_MARKER } from './hook.js'
 
 export function registerUninstall(program: Command): void {
   program

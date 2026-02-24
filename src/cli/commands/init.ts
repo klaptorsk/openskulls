@@ -13,21 +13,22 @@
 
 import { createInterface } from 'node:readline/promises'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { stringify as tomlStringify } from 'smol-toml'
 import type { Command } from 'commander'
-import { FingerprintCollector } from '../../core/fingerprint/collector.js'
+import { AIFingerprintCollector } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
-import { getBuiltinAnalyzers } from '../../core/analyzers/registry.js'
+import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
-import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
-import { mergeSections } from '../../core/generators/merge.js'
+import { resolveFilePath } from '../../core/generators/base.js'
 import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
 import {
   divider, fatal, fileList, heading, log, panel, spinner, subheading, table,
 } from '../ui/console.js'
+import { writeGeneratedFile } from './shared.js'
+import { installGitHook } from './hook.js'
 
 // ─── Command ──────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ export function registerInit(program: Command): void {
 
       let fingerprint
       try {
-        const collector = new FingerprintCollector(getBuiltinAnalyzers())
+        const collector = new AIFingerprintCollector()
         fingerprint = await collector.collect(repoRoot)
         spin.succeed('Repository analysed')
       } catch (err) {
@@ -60,6 +61,18 @@ export function registerInit(program: Command): void {
           `Could not analyse ${repoRoot}`,
           err instanceof Error ? err.message : String(err),
         )
+      }
+
+      // ── Step 1b: Generate AI skills ──────────────────────────────────────
+
+      const skillsSpin = spinner('Generating project skills…').start()
+      let aiSkills: AISkill[] = []
+      try {
+        aiSkills = await generateAISkills(fingerprint)
+        skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
+      } catch {
+        skillsSpin.warn('Could not generate skills — skipping')
+        // Non-fatal: init continues without skills
       }
 
       // ── Step 2: Show detected signals ────────────────────────────────────
@@ -109,6 +122,7 @@ export function registerInit(program: Command): void {
         installedPackages: [],
         projectConfig,
         globalConfig,
+        aiSkills,
       })
 
       // ── Step 4: Show generation plan ─────────────────────────────────────
@@ -159,6 +173,20 @@ export function registerInit(program: Command): void {
       await saveConfig(repoRoot)
       log.success(`Saved .openskulls/config.toml`)
 
+      // ── Step 8: Install git hook ──────────────────────────────────────────
+
+      const gitDir = join(repoRoot, '.git')
+      if (existsSync(gitDir)) {
+        try {
+          await installGitHook(repoRoot)
+          log.success('Installed .git/hooks/post-commit (auto-sync on commit)')
+        } catch {
+          log.warn('Could not install git hook — skipping')
+        }
+      } else {
+        log.info('No .git directory — skipping hook install')
+      }
+
       // ── Done ─────────────────────────────────────────────────────────────
 
       log.blank()
@@ -166,29 +194,6 @@ export function registerInit(program: Command): void {
       log.success(`Done. AI context is ready in ${fingerprint.repoName}.`)
       log.info('Run `openskulls audit` to check for drift after future changes.')
     })
-}
-
-// ─── File writer ──────────────────────────────────────────────────────────────
-
-async function writeGeneratedFile(file: GeneratedFile, absPath: string): Promise<void> {
-  await mkdir(dirname(absPath), { recursive: true })
-
-  if (file.mergeStrategy === 'merge_sections' && existsSync(absPath)) {
-    const existing = await readFile(absPath, 'utf-8')
-    const merged = mergeSections(existing, file.content)
-    await writeFile(absPath, merged, 'utf-8')
-    return
-  }
-
-  if (file.mergeStrategy === 'append' && existsSync(absPath)) {
-    const existing = await readFile(absPath, 'utf-8')
-    if (!existing.includes(file.content.trim())) {
-      await writeFile(absPath, existing + '\n' + file.content, 'utf-8')
-    }
-    return
-  }
-
-  await writeFile(absPath, file.content, 'utf-8')
 }
 
 // ─── Config writer ────────────────────────────────────────────────────────────

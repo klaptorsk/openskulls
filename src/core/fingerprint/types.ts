@@ -97,6 +97,13 @@ export const GitSignal = z.object({
 })
 export type GitSignal = z.infer<typeof GitSignal>
 
+export const AICLISignal = z.object({
+  tool: z.enum(['claude_code', 'copilot', 'cursor']),
+  confidence: Confidence,
+  evidence: z.array(z.string()).default([]),
+})
+export type AICLISignal = z.infer<typeof AICLISignal>
+
 // ─── RepoFingerprint ─────────────────────────────────────────────────────────
 
 /**
@@ -121,6 +128,12 @@ export const RepoFingerprint = z.object({
   linting: LintingSignal.optional(),
   architecture: ArchitectureSignal.default({ style: 'unknown' }),
   git: GitSignal.optional(),
+
+  // Detected AI coding CLI tools
+  aiCLIs: z.array(AICLISignal).default([]),
+
+  // Human-readable description (from package.json or similar)
+  description: z.string().optional(),
 
   // Computed shortcuts for generators
   primaryLanguage: z.string().optional(),

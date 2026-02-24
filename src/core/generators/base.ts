@@ -14,6 +14,7 @@
 import { join } from 'node:path'
 import type { GlobalConfig, ProjectConfig } from '../config/types.js'
 import type { RepoFingerprint } from '../fingerprint/types.js'
+import type { AISkill } from '../fingerprint/skills-builder.js'
 import type { SkullPackage } from '../packages/types.js'
 
 // ─── Generated file ───────────────────────────────────────────────────────────
@@ -59,6 +60,7 @@ export interface GeneratorInput {
   readonly installedPackages: readonly SkullPackage[]
   readonly projectConfig: ProjectConfig
   readonly globalConfig: GlobalConfig
+  readonly aiSkills?: readonly AISkill[]
 }
 
 // ─── Interface ────────────────────────────────────────────────────────────────

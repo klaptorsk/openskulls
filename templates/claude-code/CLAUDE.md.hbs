@@ -6,7 +6,8 @@
 <!-- openskulls:section:overview -->
 ## Project Overview
 
-{{#if architectureStyle}}{{capitalize architectureStyle}} application.{{/if}}
+{{#if architectureStyleLabel}}{{architectureStyleLabel}}.{{/if}}
+{{#if description}}{{description}}{{/if}}
 {{#if primaryLanguage}}Primary language: **{{primaryLanguage}}**{{#if primaryFramework}} / **{{primaryFramework}}**{{/if}}.{{/if}}
 
 <!-- /openskulls:section:overview -->
@@ -29,7 +30,7 @@
 <!-- openskulls:section:architecture -->
 ## Architecture
 
-**Style**: {{architectureStyle}}
+**Style**: {{#if architectureStyleLabel}}{{architectureStyleLabel}}{{else}}{{architectureStyle}}{{/if}}
 {{#if apiStyle}}**API**: {{uppercase apiStyle}}{{/if}}
 {{#if database}}**Database**: {{database}}{{/if}}
 {{#if entryPoints.length}}
