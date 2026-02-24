@@ -11,20 +11,67 @@ One command turns any codebase into structured AI context — CLAUDE.md, `.curso
 **Requires Node.js 20+**
 
 ```bash
-# npm
-npm install -g openskulls
-
-# bun
-bun add -g openskulls
-
-# zero-install (always latest)
-npx openskulls@latest init
+curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh
 ```
 
-**Shell one-liner** (installs via npm, with Node.js version check):
+The installer auto-detects bun, pnpm, or npm — whichever you already have. Or install directly:
 
 ```bash
-curl -fsSL https://raw.github.com/klaptorsk/openskulls/main/install.sh | sh
+# npm
+npm install --global --no-fund --no-audit openskulls
+
+# bun
+bun add --global openskulls
+
+# pnpm
+pnpm add --global openskulls
+```
+
+---
+
+## Update
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh -s -- --update
+```
+
+Or directly:
+
+```bash
+npm install --global --no-fund --no-audit openskulls@latest
+bun add --global openskulls@latest
+pnpm add --global openskulls@latest
+```
+
+---
+
+## Uninstall
+
+**Remove openskulls from a specific repo** (git hook, `.openskulls/`, `.claude/`, `CLAUDE.md`):
+
+```bash
+cd your-project
+openskulls uninstall
+```
+
+To keep your manual `CLAUDE.md` content and only strip the auto-generated sections:
+
+```bash
+openskulls uninstall --keep-claude-md
+```
+
+**Remove the binary from your system:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/uninstall.sh | sh
+```
+
+Or directly:
+
+```bash
+npm uninstall --global openskulls
+bun remove --global openskulls
+pnpm remove --global openskulls
 ```
 
 ---
@@ -184,6 +231,20 @@ Package and publish a set of skills and rules to the OpenSkulls registry.
 openskulls publish              # publishes the current package (skulls.toml required)
 openskulls publish --dry-run    # validate without publishing
 ```
+
+---
+
+### `openskulls uninstall [path]`
+
+Remove openskulls-generated files from a repository.
+
+```bash
+openskulls uninstall                 # current directory — shows plan then confirms
+openskulls uninstall --keep-claude-md  # strip managed sections, preserve manual content
+openskulls uninstall --yes           # skip confirmation
+```
+
+Removes: post-commit git hook, `.openskulls/`, `.claude/`, and `CLAUDE.md` (or just its managed sections with `--keep-claude-md`). Does **not** remove the global binary — use `uninstall.sh` for that.
 
 ---
 

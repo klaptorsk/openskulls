@@ -9,7 +9,8 @@
   "files": [
     "dist",
     "templates",
-    "install.sh"
+    "install.sh",
+    "uninstall.sh"
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json",
