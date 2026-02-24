@@ -12,7 +12,7 @@
  */
 
 import { join } from 'node:path'
-import type { GlobalConfig, ProjectConfig } from '../config/types.js'
+import type { GlobalConfig, ProjectConfig, WorkflowConfig } from '../config/types.js'
 import type { RepoFingerprint } from '../fingerprint/types.js'
 import type { AISkill } from '../fingerprint/skills-builder.js'
 import type { SkullPackage } from '../packages/types.js'
@@ -61,6 +61,7 @@ export interface GeneratorInput {
   readonly projectConfig: ProjectConfig
   readonly globalConfig: GlobalConfig
   readonly aiSkills?: readonly AISkill[]
+  readonly workflowConfig?: WorkflowConfig
 }
 
 // ─── Interface ────────────────────────────────────────────────────────────────

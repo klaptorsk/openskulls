@@ -17,6 +17,7 @@ import Handlebars from 'handlebars'
 import { skillsForTool } from '../packages/types.js'
 import { type RepoFingerprint } from '../fingerprint/types.js'
 import { type AISkill } from '../fingerprint/skills-builder.js'
+import { type WorkflowConfig } from '../config/types.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
 
 // ─── Template loading ─────────────────────────────────────────────────────────
@@ -88,6 +89,27 @@ interface TemplateContext {
   cicd: GeneratorInput['fingerprint']['cicd'] | undefined
   packageSections: Array<{ id: string; content: string }>
   isConventionalCommits: boolean
+  workflowRules: string
+}
+
+// ─── Workflow rules builder ───────────────────────────────────────────────────
+
+function buildWorkflowRulesContent(config: WorkflowConfig): string {
+  const lines: string[] = []
+
+  if (config.autoDocs === 'always') {
+    lines.push('- **Documentation**: After adding or updating a feature, always update README.md and any relevant documentation files before marking the task complete.')
+  } else if (config.autoDocs === 'ask') {
+    lines.push('- **Documentation**: After adding or updating a feature, ask the user whether documentation (README.md, docs/) should be updated before finishing.')
+  }
+
+  if (config.autoCommit === 'always') {
+    lines.push('- **Commits**: After completing a feature or fix, stage the relevant changed files and create a git commit with an appropriate message.')
+  } else if (config.autoCommit === 'ask') {
+    lines.push('- **Commits**: After completing a task, ask the user if they want to commit the changes.')
+  }
+
+  return lines.join('\n')
 }
 
 // ─── Generator ────────────────────────────────────────────────────────────────
@@ -132,6 +154,7 @@ export class ClaudeCodeGenerator extends BaseGenerator {
       cicd: fingerprint.cicd,
       packageSections,
       isConventionalCommits,
+      workflowRules: input.workflowConfig ? buildWorkflowRulesContent(input.workflowConfig) : '',
     }
 
     files.push(repoFile('CLAUDE.md', COMPILED_TEMPLATE(ctx), 'merge_sections'))

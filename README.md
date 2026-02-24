@@ -2,7 +2,7 @@
 
 > Makes your repo readable to AI agents, then keeps it readable as the code evolves.
 
-One command turns any codebase into structured AI context — CLAUDE.md, `.cursorrules`, project skills — and keeps it accurate automatically as the code changes.
+One command turns any codebase into structured AI context — `CLAUDE.md`, project skills, workflow rules — and keeps it accurate automatically as the code changes.
 
 ---
 
@@ -83,12 +83,15 @@ cd your-project
 openskulls init
 ```
 
-That's it. OpenSkulls scans the repo, detects your stack, asks a few questions it can't infer, shows you a preview, then writes:
+OpenSkulls scans the repo with AI, detects your stack, asks two workflow questions, shows you a generation plan, then writes:
 
 - `CLAUDE.md` — structured project context for Claude Code
-- `.claude/commands/` — project-specific skills (reusable agent workflows)
-- `.openskulls/fingerprint.json` — the baseline for drift detection
-- A post-commit git hook that keeps everything in sync
+- `.claude/skills.md` — project-specific AI skills overview
+- `.claude/skills/` — per-skill reference documents (slash commands)
+- `.claude/commands/` — built-in workflow scripts (run-tests, commit)
+- `.openskulls/fingerprint.json` — baseline for drift detection
+- `.openskulls/config.toml` — project configuration
+- `.git/hooks/post-commit` — non-blocking auto-sync hook
 
 ---
 
@@ -96,7 +99,7 @@ That's it. OpenSkulls scans the repo, detects your stack, asks a few questions i
 
 Agentic engineering only works when the agent understands the codebase. Right now that understanding has to be built by hand, maintained by hand, and rebuilt whenever the code changes:
 
-- **Context rot** — CLAUDE.md and `.cursorrules` go stale as the codebase evolves, so agents hallucinate based on outdated conventions
+- **Context rot** — `CLAUDE.md` and `.cursorrules` go stale as the codebase evolves, so agents hallucinate based on outdated conventions
 - **Blank-page problem** — new teams don't know where to start, so they don't, and agents operate without any structured context at all
 - **Tool fragmentation** — a team using Claude Code + Cursor + Copilot maintains three separate context formats
 - **Team inconsistency** — every developer configures their own context differently, so agents behave differently depending on who set them up
@@ -111,75 +114,156 @@ OpenSkulls runs a single core loop: **analyze → generate → maintain**.
 
 ### Analyze
 
-OpenSkulls reads the repo and builds a structured fingerprint:
+OpenSkulls scans the local file tree, reads key config files (`package.json`, `tsconfig.json`, `go.mod`, `pyproject.toml`, etc.), then sends a structured prompt to `claude -p` via stdin. The AI returns a `RepoFingerprint` — a rich structured snapshot of everything it detected:
 
-- **Languages**: detects every language present, the primary language by file count, and runtime versions (from `.nvmrc`, `go.mod`, `pyproject.toml`, `.python-version`, etc.)
-- **Frameworks**: matches import signatures and config file patterns against a known set
-- **Dependencies**: parses `package.json`, `go.mod`, `pyproject.toml`, `requirements.txt` for runtime vs dev deps
-- **Conventions**: finds linter configs, formatter configs, test patterns, and commit style from git history
-- **Testing**: detects framework (vitest, jest, pytest, etc.) and test file patterns
-- **Architecture**: identifies module boundaries and service separation in monorepos
-- **AI tool usage**: checks for existing `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`
+- **Languages**: every language present, percentage by file count, runtime versions
+- **Frameworks**: frontend, backend, fullstack, ORM, testing — detected from deps and config
+- **Dependencies**: runtime vs. dev, pinned versions, source manifest
+- **Conventions**: linting, formatting, package manager, commit style
+- **Testing**: framework, file patterns, coverage tool
+- **CI/CD**: platform (GitHub Actions, GitLab CI, etc.), deploy targets
+- **Architecture**: style (monolith, monorepo, CLI, microservices), entry points, module structure
+- **Git**: commit style (conventional, jira, freeform), primary branch, contributor count
 
-The fingerprint is saved as `.openskulls/fingerprint.json` — the baseline for future drift detection.
+The fingerprint is stored in `.openskulls/fingerprint.json` as the baseline for future drift detection. A SHA-256 content hash (excluding machine-specific paths and timestamps) makes it stable and comparable across any machine.
 
 ### Generate
 
-From the fingerprint, OpenSkulls writes context files tailored to each AI tool in use. For Claude Code:
+From the fingerprint, OpenSkulls runs a second AI call to generate **project skills** — repo-specific slash commands tailored to the detected stack. Then the `ClaudeCodeGenerator` renders all context files.
 
-```
-CLAUDE.md
-├── Project Overview        ← auto-generated from fingerprint
-├── Tech Stack              ← languages, versions, frameworks
-├── Architecture            ← module structure, service layout
-├── Conventions             ← linting, formatting, test patterns
-├── Agent Guidance          ← how to work with this specific codebase
-└── [your manual sections]  ← untouched, always preserved
-```
+#### `CLAUDE.md`
 
-Before writing anything, OpenSkulls shows a **generation plan** — what files will be created or modified, and what the content will look like. Nothing is written until you confirm.
+```markdown
+# repo-name
 
-If a `CLAUDE.md` already exists, OpenSkulls merges: it regenerates only the sections it owns (tagged with `<!-- openskulls:section:* -->`) and leaves all manual content untouched.
+<!-- openskulls:section:overview -->
+## Project Overview
+Architecture style, description, primary language and framework.
+<!-- /openskulls:section:overview -->
 
-### Maintain
+<!-- openskulls:section:tech_stack -->
+## Tech Stack
+All detected languages (with percentages) and frameworks (with categories).
+<!-- /openskulls:section:tech_stack -->
 
-A lightweight post-commit git hook watches for drift. When dependencies change, when new frameworks are adopted, when architecture shifts — OpenSkulls detects the delta and notifies you at the next terminal session. `openskulls sync` shows exactly what changed and updates only the affected sections.
+<!-- openskulls:section:architecture -->
+## Architecture
+Style, API type, database, entry points, module structure.
+<!-- /openskulls:section:architecture -->
 
-The hook never blocks a commit. It never interrupts a development flow.
+<!-- openskulls:section:conventions -->
+## Conventions
+Detected conventions: package manager, TypeScript config, linting tools.
+<!-- /openskulls:section:conventions -->
+
+<!-- openskulls:section:testing -->
+## Testing
+Framework, test file pattern, coverage tool.
+<!-- /openskulls:section:testing -->
+
+<!-- openskulls:section:cicd -->
+## CI/CD
+Platform and deploy targets (only when detected).
+<!-- /openskulls:section:cicd -->
+
+<!-- openskulls:section:workflow_rules -->
+## Workflow Rules
+Auto-documentation and auto-commit policies (from your init answers).
+<!-- /openskulls:section:workflow_rules -->
+
+<!-- openskulls:section:agent_guidance -->
+## Agent Guidance
+Commit format, working patterns, scope constraints.
+<!-- /openskulls:section:agent_guidance -->
 
 ---
 
-## Commands
+## Key Files   ← your manual section — never touched by openskulls
 
-### `openskulls init [path]`
+| Path | Purpose |
+| ---- | ------- |
+```
 
-Analyse a repository and generate AI context files. Runs the full pipeline: fingerprint → interview → generate plan → write files → install git hook.
+Tagged sections (`<!-- openskulls:section:* -->`) are owned by OpenSkulls and regenerated on sync. Everything outside those tags is yours — preserved permanently, including manual sections you add below.
+
+#### `.claude/skills/`
+
+The second AI call generates project-specific skills: slash commands with rich reference content tailored to your stack. Each skill lives at `.claude/skills/<id>/SKILL.md` with YAML frontmatter that registers it as a `/<id>` slash command in Claude Code.
+
+```
+.claude/
+├── skills.md                      # overview of all AI-generated skills, grouped by category
+└── skills/
+    ├── add-api-endpoint/
+    │   └── SKILL.md               # /add-api-endpoint
+    ├── write-unit-test/
+    │   └── SKILL.md               # /write-unit-test
+    └── run-migration/
+        └── SKILL.md               # /run-migration
+```
+
+Skills are non-fatal: if the AI call fails, `init` and `sync` continue without them.
+
+#### `.claude/commands/`
+
+Built-in workflow scripts are emitted automatically when conditions are met:
+
+| File | Condition |
+|------|-----------|
+| `run-tests.md` | Testing framework detected (`/run-tests`) |
+| `commit.md` | Conventional Commits style detected (`/commit`) |
+
+Skills from installed packages (via `openskulls add`) are also placed here.
+
+### Maintain
+
+A non-blocking post-commit hook watches for drift. When dependencies change, frameworks are added, or architecture shifts — OpenSkulls detects the delta and updates context automatically. The hook never blocks a commit and never interrupts developer flow.
+
+---
+
+## `openskulls init [path]`
+
+Analyse a repository and generate AI context files. Runs the full pipeline.
 
 ```bash
 openskulls init                 # current directory
 openskulls init ./my-service    # explicit path
 openskulls init --dry-run       # preview without writing
 openskulls init --yes           # skip confirmation prompts
-openskulls init -t claude_code cursor  # target specific tools
 ```
 
-**What it detects automatically** (no input required):
-- Languages, runtime versions, primary language
-- Frameworks and libraries from dependency manifests
-- Test framework and test file patterns
-- Linter and formatter config
-- Package manager (npm / pnpm / yarn / bun)
-- Existing AI tool config files
+**Init flow:**
 
-**What it asks** (only when inference fails):
-1. Which AI tools should context be generated for?
-2. What is the primary purpose of this codebase? (one sentence)
-3. Is this for a solo developer, small team, or open-source contributors?
-4. Any conventions that live in someone's head and not in a config file? (optional)
+1. **Analyse repo** — scans file tree, reads config files, invokes `claude -p` for AI analysis
+2. **Generate project skills** — second AI call produces repo-specific slash commands (non-fatal)
+3. **Show detected signals** — languages, frameworks, testing, linting in a table
+4. **Workflow setup** — two questions to configure how Claude works in this repo (skipped with `--yes`)
+5. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
+6. **Show generation plan** — lists every file that will be created or updated
+7. **Confirm** — nothing is written until you approve (skipped with `--yes`)
+8. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
+9. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
+10. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
+
+**Workflow questions** (step 4):
+
+```
+Auto-documentation — when a feature is added or updated:
+  1  Update docs automatically
+  2  Ask me first  ← default
+  3  I'll handle docs myself
+
+Auto-commit — when a task is complete:
+  1  Ask me first  ← default
+  2  Commit automatically
+  3  Never — I'll commit manually
+```
+
+Answers are saved to `.openskulls/config.toml` and generate a `workflow_rules` section in `CLAUDE.md` that instructs Claude on your preferences.
 
 ---
 
-### `openskulls sync`
+## `openskulls sync [path]`
 
 Update context files to match the current state of the repo. Run this after pulling changes from teammates, or when the post-commit hook reports drift.
 
@@ -189,17 +273,37 @@ openskulls sync --dry-run       # show what would change
 openskulls sync --yes           # apply without confirmation
 ```
 
-Sync regenerates only the sections it owns. Manual content is always preserved.
+Sync detects drift by comparing the current repo's `contentHash` against the stored baseline. If the hash changed, it runs the full analysis → generate pipeline and shows exactly which sections would be updated before writing anything.
+
+**Hook mode** (called automatically by the post-commit hook):
+
+```bash
+openskulls sync --hook --changed "package.json\nsrc/server.ts"
+```
+
+In hook mode, OpenSkulls checks whether any changed file matches a trigger pattern. If no trigger file changed it exits immediately (fast path). All output is suppressed. The process always exits 0 — a sync failure never blocks a commit.
+
+**Default trigger patterns:**
+
+```
+package.json, package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb
+requirements*.txt, pyproject.toml, Pipfile, Pipfile.lock
+go.mod, go.sum
+Cargo.toml, Cargo.lock
+Gemfile, Gemfile.lock
+tsconfig*.json
+.github/workflows/**
+```
 
 ---
 
-### `openskulls audit`
+## `openskulls audit [path]` _(v0.2)_
 
-Check the health of the current context against the repo. Produces a context health report showing:
+Check the health of the current context against the repo. Produces a report showing:
 
-- Stale references (packages or frameworks mentioned in context that are no longer in the dependency graph)
-- Missing coverage (major modules or patterns not represented in context)
-- Drift score (how far the current repo has moved from the fingerprint baseline)
+- Stale references — packages or frameworks in context that are no longer in the dependency graph
+- Missing coverage — major modules or patterns not represented in context
+- Drift score — how far the current repo has moved from the fingerprint baseline
 
 ```bash
 openskulls audit                # interactive report
@@ -209,7 +313,7 @@ openskulls audit --json         # machine-readable output
 
 ---
 
-### `openskulls add <package>` _(v0.2)_
+## `openskulls add <package>` _(v0.2)_
 
 Install a skill package from the OpenSkulls registry.
 
@@ -223,9 +327,9 @@ Packages are versioned and pinned in `.openskulls/skulls.lock`. Skills are insta
 
 ---
 
-### `openskulls publish` _(v0.2)_
+## `openskulls publish [path]` _(v0.2)_
 
-Package and publish a set of skills and rules to the OpenSkulls registry.
+Package and publish skills and rules to the OpenSkulls registry.
 
 ```bash
 openskulls publish              # publishes the current package (skulls.toml required)
@@ -234,72 +338,35 @@ openskulls publish --dry-run    # validate without publishing
 
 ---
 
-### `openskulls uninstall [path]`
+## `openskulls uninstall [path]`
 
-Remove openskulls-generated files from a repository.
+Remove all openskulls-generated files from a repository.
 
 ```bash
-openskulls uninstall                 # current directory — shows plan then confirms
+openskulls uninstall                   # shows plan then confirms
 openskulls uninstall --keep-claude-md  # strip managed sections, preserve manual content
-openskulls uninstall --yes           # skip confirmation
+openskulls uninstall --yes             # skip confirmation
 ```
 
-Removes: post-commit git hook, `.openskulls/`, `.claude/`, and `CLAUDE.md` (or just its managed sections with `--keep-claude-md`). Does **not** remove the global binary — use `uninstall.sh` for that.
+Removes: post-commit hook, `.openskulls/`, `.claude/`, and `CLAUDE.md` (or just its managed sections with `--keep-claude-md`). Does **not** remove the global binary — use the uninstall script for that.
 
 ---
 
-## What Gets Generated
+## Merge Strategy
 
-### CLAUDE.md
+OpenSkulls never blindly overwrites files. Each generated file has a declared merge strategy:
 
-The generated `CLAUDE.md` is structured, dense, and agent-optimised. Example output for a TypeScript + Next.js project:
+| Strategy | Used for | Behaviour |
+|----------|----------|-----------|
+| `merge_sections` | `CLAUDE.md`, `.claude/skills.md` | Regenerates only `<!-- openskulls:section:* -->` blocks; all manual content is preserved in place |
+| `replace` | `.claude/settings.json`, skill files | Overwrites the entire file |
 
-```markdown
-# Project Context
+The section merge algorithm (`src/core/generators/merge.ts`) is a pure function with no I/O:
+1. Parse the existing file into alternating manual and managed chunks
+2. Build a map of new managed section content
+3. Rebuild: preserve manual chunks in order, replace managed sections with new versions, append any new sections
 
-<!-- openskulls:section:overview -->
-This is a Next.js 14 full-stack application using TypeScript in strict mode.
-Primary language: TypeScript (94%). Runtime: Node.js 20.
-<!-- /openskulls:section:overview -->
-
-<!-- openskulls:section:stack -->
-## Tech Stack
-- **Framework**: Next.js 14.2 (App Router)
-- **Language**: TypeScript 5.5, strict mode
-- **ORM**: Prisma 5.0
-- **Testing**: Vitest, pattern `**/*.test.ts`
-- **Linting**: ESLint + Prettier (eslint.config.js)
-- **Package manager**: pnpm
-<!-- /openskulls:section:stack -->
-
-<!-- openskulls:section:conventions -->
-## Conventions
-- Tests live alongside source files as `*.test.ts`
-- Use `pnpm` for all package operations, never npm
-- ESLint config is flat format (eslint.config.js)
-- TypeScript strict mode is enforced — no `any`, no non-null assertions
-<!-- /openskulls:section:conventions -->
-
-## Architecture  ← manually authored, never touched by openskulls
-
-...your notes here...
-```
-
-Tagged sections (`<!-- openskulls:section:* -->`) are regenerated on sync. Everything outside the tags is yours.
-
-### .claude/commands/
-
-Project skills are installed as plain markdown files in `.claude/commands/`. Each skill is a named, reusable workflow the agent can execute on demand:
-
-```
-.claude/commands/
-├── add-api-endpoint.md     # steps to add a REST endpoint for this specific stack
-├── add-migration.md        # database migration workflow
-├── run-tests.md            # how to run and interpret tests in this repo
-└── review-pr.md            # code review checklist for this codebase
-```
-
-Skills are generated based on the detected stack and can be used with `/add-api-endpoint` in Claude Code.
+The result: multiple syncs are safe, manual edits survive, and no content is ever silently lost.
 
 ---
 
@@ -311,59 +378,20 @@ Context is not one thing. OpenSkulls enforces a clear separation between what be
 ~/.claude/CLAUDE.md                    # Your identity: name, preferences, style
 ~/.claude/commands/                    # Personal skills: carried across every repo
 
-[repo]/.openskulls/config.toml         # OpenSkulls config (committed)
+[repo]/.openskulls/config.toml         # OpenSkulls project config (committed)
 [repo]/.openskulls/fingerprint.json    # Drift baseline (committed)
 [repo]/CLAUDE.md                       # Project context (committed)
-[repo]/.claude/commands/               # Project skills (committed)
-[repo]/.claude/settings.json           # Claude Code settings + hook config (committed)
-[repo]/.cursorrules                    # Cursor rules (committed, if Cursor in use)
+[repo]/.claude/skills.md              # AI-generated skills overview (committed)
+[repo]/.claude/skills/                # AI-generated per-skill reference docs (committed)
+[repo]/.claude/commands/              # Built-in and package workflow scripts (committed)
+[repo]/.claude/settings.json          # Claude Code settings (committed)
 ```
 
 **Personal context** (`~/.claude/`) is never committed. It follows you across every repo.
 
 **Project context** (`[repo]/`) is committed. Every teammate gets the same baseline after pulling.
 
-**Team consistency** emerges naturally: when `.openskulls/config.toml` and `CLAUDE.md` are committed, every developer who runs `openskulls sync` gets the current project context.
-
----
-
-## Supported Languages & Frameworks
-
-### Languages
-| Language   | Version detection | Source    |
-|------------|------------------|-----------|
-| Python     | ✓ | `pyproject.toml`, `.python-version` |
-| JavaScript | ✓ | `package.json`, `engines` field |
-| TypeScript | ✓ | `package.json` (`typescript` dep) |
-| Go         | ✓ | `go.mod` |
-
-### Frameworks (auto-detected)
-| Category   | Frameworks |
-|------------|-----------|
-| Full-stack | Next.js, Nuxt, Remix |
-| Frontend   | React, Vue, Svelte, SolidJS, Angular |
-| Backend (JS) | Express, Fastify, Koa, Hono, NestJS, tRPC, GraphQL |
-| Backend (Python) | FastAPI, Django, Flask, Starlette, Litestar, aiohttp |
-| Backend (Go) | Gin, Echo, Fiber, Gorilla Mux, Chi, gRPC |
-| ORM (JS)   | Prisma, Drizzle, Mongoose, TypeORM |
-| ORM (Python) | SQLAlchemy, Tortoise ORM |
-| ORM (Go)   | GORM, sqlx, Bun, Ent |
-| ML/Data    | PyTorch, TensorFlow, HuggingFace Transformers, NumPy, Pandas |
-| CLI        | Cobra, Click, Typer, urfave/cli |
-| Validation | Zod, Pydantic |
-| Desktop    | Electron |
-
-### Testing
-| Language | Frameworks |
-|----------|-----------|
-| JavaScript/TypeScript | Vitest, Jest, Mocha, Playwright, Cypress |
-| Python | pytest, unittest |
-
-### Linting & Formatting
-| Language | Tools |
-|----------|-------|
-| JavaScript/TypeScript | ESLint, Prettier, Biome, XO |
-| Python | Ruff, mypy, Black, pylint, isort, flake8 |
+**Team consistency** emerges naturally: when `.openskulls/config.toml` and `CLAUDE.md` are committed, every developer who pulls and runs `openskulls sync` gets the current project context.
 
 ---
 
@@ -372,56 +400,121 @@ Context is not one thing. OpenSkulls enforces a clear separation between what be
 Project configuration lives in `.openskulls/config.toml` (committed to the repo):
 
 ```toml
-# .openskulls/config.toml
+schema_version = "1.0.0"
 
-[project]
-name = "my-service"
-description = "A REST API for managing user accounts"
-audience = "team"          # solo | team | open-source
+[[targets]]
+name = "claude_code"
+enabled = true
 
-[tools]
-targets = ["claude_code"]  # claude_code | cursor | copilot | cline
+[workflow]
+auto_docs = "ask"      # "always" | "ask" | "never"
+auto_commit = "ask"    # "always" | "ask" | "never"
 
-[sync]
-auto_sections = ["overview", "stack", "conventions"]
-preserve_sections = ["architecture", "agent-guidance"]
+exclude_paths = [
+  "node_modules", ".git", "dist", "build",
+  ".venv", "__pycache__", ".next", ".nuxt", "coverage"
+]
+```
 
-[hooks]
-post_commit = true         # enable non-blocking post-commit drift check
+`workflow.auto_docs` and `workflow.auto_commit` are set during `openskulls init` and drive the `## Workflow Rules` section in `CLAUDE.md`. They can be changed by editing the file and re-running `openskulls sync`.
+
+**Personal global config** lives in `~/.openskulls/config.json` (never committed):
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "registryUrl": "https://registry.openskulls.dev",
+  "preferredTools": ["claude_code"],
+  "developerProfile": {
+    "name": "",
+    "preferredEditor": "",
+    "codingStyleNotes": "",
+    "personalRules": []
+  }
+}
 ```
 
 ---
 
 ## Drift Detection
 
-After `openskulls init`, the repo fingerprint is committed to `.openskulls/fingerprint.json`. The post-commit hook compares the current repo state to this baseline after every commit.
+After `openskulls init`, the fingerprint is committed to `.openskulls/fingerprint.json`. Each file in the fingerprint contributes to a SHA-256 `contentHash` (excluding `repoRoot`, `generatedAt`, and `contentHash` itself), so the hash is machine-independent — the same codebase produces the same hash anywhere.
 
-Drift categories:
+The post-commit hook runs `openskulls sync --hook` after every commit. If a trigger-pattern file changed, it re-fingerprints the repo and compares hashes. On drift, it updates context files silently. On failure, it exits 0.
 
-| Category | Trigger |
-|----------|---------|
-| Dependency drift | Package added, removed, or major version bump |
+**Drift categories:**
+
+| Category | Example trigger |
+|----------|----------------|
+| Dependency drift | New package added, major version bump |
+| Framework drift | New framework detected in dependency graph |
 | Convention drift | New linter config, formatter config changed |
-| Framework drift | New framework detected in dep graph |
-| Architecture drift | New module boundary or service introduced |
+| Architecture drift | New module boundary, `tsconfig.json` path change |
+| CI/CD drift | New workflow file added under `.github/workflows/` |
 
-When drift is detected, `openskulls sync` shows a structured diff:
+---
 
-```
-openskulls sync
+## AI Analysis
 
-  Drift detected since last sync (3 changes):
+The analysis pipeline (`src/core/fingerprint/ai-collector.ts`) uses Claude Code's `claude -p` subprocess via stdin — no hardcoded language parsers, no regex matching against a fixed list.
 
-  + tailwindcss@3.4.0 added to dependencies
-  + @tanstack/react-query@5.0.0 added to dependencies
-  ~ typescript 5.4 → 5.5
+**Pipeline:**
 
-  Sections that would be updated:
-    CLAUDE.md > stack
-    CLAUDE.md > conventions
+1. Walk repo file tree (max depth 6), cataloguing ~50 known config file types
+2. Read key config file contents (up to 32 KB each)
+3. Detect installed AI CLI tools (by checking `$PATH` dirs for execute permission)
+4. Build a structured analysis prompt from the file tree and config contents
+5. Pipe prompt to `claude -p` via stdin (avoids `ARG_MAX` limits)
+6. Parse and Zod-validate the JSON response
+7. Compute `contentHash` and assemble the `RepoFingerprint`
 
-  Proceed? [y/N]
-```
+Because analysis is AI-driven, OpenSkulls can detect any language, framework, or convention — not just the ones on a hardcoded list. The output is always validated against a Zod schema before use.
+
+---
+
+## Supported Languages & Frameworks
+
+Because analysis is AI-powered, OpenSkulls can detect any stack. The following are reliably detected because their config files are always read:
+
+### Languages
+| Language | Version source |
+|----------|---------------|
+| Python | `pyproject.toml`, `.python-version` |
+| JavaScript | `package.json` `engines` field |
+| TypeScript | `package.json` `typescript` dep |
+| Go | `go.mod` |
+| Rust | `Cargo.toml` |
+| Ruby | `Gemfile`, `.ruby-version` |
+
+### Frameworks (auto-detected via deps + config)
+| Category | Frameworks |
+|----------|-----------|
+| Full-stack | Next.js, Nuxt, Remix, SvelteKit |
+| Frontend | React, Vue, Svelte, SolidJS, Angular |
+| Backend (JS/TS) | Express, Fastify, Koa, Hono, NestJS, tRPC, GraphQL |
+| Backend (Python) | FastAPI, Django, Flask, Starlette, Litestar, aiohttp |
+| Backend (Go) | Gin, Echo, Fiber, Gorilla Mux, Chi, gRPC |
+| ORM (JS/TS) | Prisma, Drizzle, Mongoose, TypeORM |
+| ORM (Python) | SQLAlchemy, Tortoise ORM |
+| ORM (Go) | GORM, sqlx, Bun, Ent |
+| ML / Data | PyTorch, TensorFlow, HuggingFace Transformers, NumPy, Pandas |
+| CLI | Cobra, Click, Typer, urfave/cli, Commander |
+| Validation | Zod, Pydantic |
+| Desktop | Electron, Tauri |
+
+### Testing
+| Language | Frameworks |
+|----------|-----------|
+| JavaScript/TypeScript | Vitest, Jest, Mocha, Playwright, Cypress |
+| Python | pytest, unittest |
+| Go | built-in `testing`, testify |
+
+### Linting & Formatting
+| Language | Tools |
+|----------|-------|
+| JavaScript/TypeScript | ESLint, Prettier, Biome, XO |
+| Python | Ruff, mypy, Black, pylint, isort, flake8 |
+| Go | golangci-lint, gofmt |
 
 ---
 
@@ -430,7 +523,7 @@ openskulls sync
 ```bash
 git clone https://github.com/klaptorsk/openskulls
 cd openskulls
-npm install
+npm install --no-fund --no-audit
 npm run build
 npm link        # makes `openskulls` available globally
 ```
@@ -441,14 +534,30 @@ Verify:
 openskulls --version
 ```
 
+Run the test suite:
+
+```bash
+npm test
+```
+
+---
+
+## Architecture Notes
+
+- **Generators are pure functions** — `generate(input): GeneratedFile[]` never writes to disk. The CLI layer owns all I/O. This enables dry-run, diff preview, and CI mode.
+- **Zod as source of truth** — all types are `z.infer<typeof Schema>`. The same schemas validate AI responses at runtime and provide compile-time safety.
+- **Stdin over CLI args** — AI prompts are written to `child.stdin` to avoid `ARG_MAX` limits on large repos.
+- **Content-addressed fingerprints** — SHA-256 over content fields only (no paths, no timestamps). Same codebase = same hash on any machine, in any directory.
+- **Non-blocking hooks** — the post-commit hook always exits 0. A sync failure or analysis error never interrupts a developer's commit.
+
 ---
 
 ## Roadmap
 
 | Version | Focus |
 |---------|-------|
-| **v0.1** | Core loop: `init`, `sync`, `audit` — Python, JS, TS, Go — Claude Code generator |
-| **v0.2** | Multi-tool: Cursor, Cline, Copilot — Rust, Java, Ruby — skill registry + `openskulls add` |
+| **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code generator — workflow rules — git hook |
+| **v0.2** | Multi-tool: Cursor, Cline, Copilot — `openskulls audit` — skill registry + `openskulls add` |
 | **v0.3** | Feedback loop: `openskulls refine` — skill composition — CI mode — plugin API |
 | **v1.0** | Platform: org-level context — agent performance metrics — multi-agent profiles |
 

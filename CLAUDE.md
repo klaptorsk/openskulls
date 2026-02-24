@@ -18,9 +18,7 @@ Primary language: **TypeScript**.
 - **zod** 3.23.8 (utility)
 - **handlebars** 4.7.8 (utility)
 - **simple-git** 3.25.0 (utility)
-- **chalk** 5.3.0 (utility)
-- **ora** 8.1.0 (utility)
-- **smol-toml** 1.3.1 (utility)
+- **vitest** 2.0.0 (testing)
 
 <!-- /openskulls:section:tech_stack -->
 
@@ -51,7 +49,6 @@ Primary language: **TypeScript**.
 - **Typescript Strict**: `strict`
 - **Zod Types**: `z.infer&lt;typeof Schema&gt;`
 - **Generators No Io**: `GeneratedFile[] return only`
-- **Npm Flags**: `--no-fund --no-audit`
 **Linting/Formatting**: eslint
 
 <!-- /openskulls:section:conventions -->

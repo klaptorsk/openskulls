@@ -38,6 +38,12 @@ export const SyncConfig = z.object({
 })
 export type SyncConfig = z.infer<typeof SyncConfig>
 
+export const WorkflowConfig = z.object({
+  autoDocs:   z.enum(['always', 'ask', 'never']).default('ask'),
+  autoCommit: z.enum(['always', 'ask', 'never']).default('ask'),
+})
+export type WorkflowConfig = z.infer<typeof WorkflowConfig>
+
 export const ProjectConfig = z.object({
   schemaVersion: z.string().default('1.0.0'),
 
@@ -48,6 +54,8 @@ export const ProjectConfig = z.object({
   targets: z.array(ToolTarget).default([]),
 
   sync: SyncConfig.default({}),
+
+  workflow: WorkflowConfig.default({}),
 
   // Paths excluded from repo analysis
   excludePaths: z.array(z.string()).default([

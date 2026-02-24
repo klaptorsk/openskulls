@@ -10,7 +10,7 @@ import { ClaudeCodeGenerator } from '../../src/core/generators/claude-code.js'
 import type { GeneratorInput } from '../../src/core/generators/base.js'
 import { createFingerprint } from '../../src/core/fingerprint/types.js'
 import type { AISkill } from '../../src/core/fingerprint/skills-builder.js'
-import { defaultProjectConfig, defaultGlobalConfig } from '../../src/core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig, type WorkflowConfig } from '../../src/core/config/types.js'
 import type { SkullPackage } from '../../src/core/packages/types.js'
 
 // ─── Factories ────────────────────────────────────────────────────────────────
@@ -671,5 +671,74 @@ describe('.claude/settings.json', () => {
     const settings = files.find((f) => f.relativePath === '.claude/settings.json')!
     const parsed = JSON.parse(settings.content)
     expect(parsed).toHaveProperty('version')
+  })
+})
+
+// ─── Workflow rules ───────────────────────────────────────────────────────────
+
+describe('workflow_rules section', () => {
+  it('includes workflow_rules section when workflowConfig is provided', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'always', autoCommit: 'always' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).toContain('<!-- openskulls:section:workflow_rules -->')
+    expect(content).toContain('<!-- /openskulls:section:workflow_rules -->')
+    expect(content).toContain('## Workflow Rules')
+  })
+
+  it('omits workflow_rules section when workflowConfig is absent', () => {
+    const content = gen.generate(makeInput())[0].content
+    expect(content).not.toContain('workflow_rules')
+    expect(content).not.toContain('## Workflow Rules')
+  })
+
+  it('renders auto-docs "always" rule', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'always', autoCommit: 'never' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).toContain('always update README.md')
+  })
+
+  it('renders auto-docs "ask" rule', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'ask', autoCommit: 'never' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).toContain('ask the user whether documentation')
+  })
+
+  it('omits docs rule when autoDocs is "never"', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'never', autoCommit: 'ask' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).not.toContain('Documentation')
+  })
+
+  it('renders auto-commit "always" rule', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'never', autoCommit: 'always' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).toContain('create a git commit')
+  })
+
+  it('renders auto-commit "ask" rule', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'never', autoCommit: 'ask' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).toContain('ask the user if they want to commit')
+  })
+
+  it('omits commit rule when autoCommit is "never"', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'ask', autoCommit: 'never' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).not.toContain('Commits')
+  })
+
+  it('omits workflow_rules section when both are "never"', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'never', autoCommit: 'never' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    expect(content).not.toContain('## Workflow Rules')
+  })
+
+  it('section appears before agent_guidance', () => {
+    const workflowConfig: WorkflowConfig = { autoDocs: 'always', autoCommit: 'always' }
+    const content = gen.generate(makeInput({ workflowConfig }))[0].content
+    const workflowPos = content.indexOf('<!-- openskulls:section:workflow_rules -->')
+    const agentPos = content.indexOf('<!-- openskulls:section:agent_guidance -->')
+    expect(workflowPos).toBeGreaterThan(-1)
+    expect(workflowPos).toBeLessThan(agentPos)
   })
 })

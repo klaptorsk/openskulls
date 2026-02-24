@@ -175,7 +175,7 @@ The MVP proves the core loop works end-to-end for one tool and a small set of la
 
 **Commands**: `init`, `sync`, `audit`
 
-**Analyzers**: Python, JavaScript, TypeScript, Go. Each analyzer detects: language version, primary framework (one level deep), test pattern, linter config.
+**Analyzers**: AI analyser invokes cli avaialbe
 
 **Generators**: Claude Code only (writes CLAUDE.md and `.claude/commands/`). Other tool generators are stubs.
 

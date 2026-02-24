@@ -125,8 +125,9 @@ async function interactiveMode(
   try {
     aiSkills = await generateAISkills(fingerprint)
     skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
-  } catch {
+  } catch (err) {
     skillsSpin.warn('Could not generate skills — skipping')
+    log.info(err instanceof Error ? err.message : String(err))
     // Non-fatal: sync continues without skills
   }
 

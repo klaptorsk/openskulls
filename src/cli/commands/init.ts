@@ -23,12 +23,13 @@ import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
 import { resolveFilePath } from '../../core/generators/base.js'
-import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig, type WorkflowConfig } from '../../core/config/types.js'
 import {
-  divider, fatal, fileList, heading, log, panel, spinner, subheading, table,
+  banner, divider, fatal, fileList, heading, log, spinner, subheading, table,
 } from '../ui/console.js'
 import { writeGeneratedFile } from './shared.js'
 import { installGitHook } from './hook.js'
+import { runInterviewer } from './interviewer.js'
 
 // ─── Command ──────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ export function registerInit(program: Command): void {
     ) => {
       const repoRoot = resolve(path)
 
-      panel('OpenSkulls init', [repoRoot])
+      banner('init', repoRoot)
 
       // ── Step 1: Analyse ──────────────────────────────────────────────────
 
@@ -70,8 +71,9 @@ export function registerInit(program: Command): void {
       try {
         aiSkills = await generateAISkills(fingerprint)
         skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
-      } catch {
+      } catch (err) {
         skillsSpin.warn('Could not generate skills — skipping')
+        log.info(err instanceof Error ? err.message : String(err))
         // Non-fatal: init continues without skills
       }
 
@@ -85,8 +87,10 @@ export function registerInit(program: Command): void {
       } else {
         table(
           fingerprint.languages.map((l) => [
-            `${l.name}${l.primary ? ' (primary)' : ''}`,
-            `${l.percentage.toFixed(0)}%${l.version ? `  v${l.version}` : ''}  [${l.confidence}]`,
+            l.name + (l.primary ? ' ✦' : ''),
+            `${l.percentage.toFixed(0)}%`,
+            l.version ? `v${l.version}` : '',
+            l.confidence,
           ]),
         )
       }
@@ -97,19 +101,47 @@ export function registerInit(program: Command): void {
         table(
           fingerprint.frameworks.map((f) => [
             f.name,
-            `${f.category}${f.version ? `  v${f.version}` : ''}  [${f.confidence}]`,
+            f.category,
+            f.version ? `v${f.version}` : '',
+            f.confidence,
           ]),
         )
       }
 
       if (fingerprint.testing) {
         log.blank()
-        log.info(`Testing: ${fingerprint.testing.framework}${fingerprint.testing.pattern ? `  (${fingerprint.testing.pattern})` : ''}`)
+        subheading('Testing')
+        table([
+          [fingerprint.testing.framework, fingerprint.testing.pattern ?? '', fingerprint.testing.coverageTool ?? ''],
+        ])
       }
 
       if (fingerprint.linting && fingerprint.linting.tools.length > 0) {
-        log.info(`Linting: ${fingerprint.linting.tools.join(', ')}`)
+        log.blank()
+        subheading('Linting')
+        table(fingerprint.linting.tools.map((tool) => [tool]))
       }
+
+      if (fingerprint.aiCLIs.length > 0) {
+        log.blank()
+        subheading('AI tools')
+        const AI_TOOL_LABELS: Record<string, string> = {
+          claude_code: 'Claude Code',
+          cursor:      'Cursor',
+          copilot:     'GitHub Copilot',
+        }
+        table(
+          fingerprint.aiCLIs.map((ai) => [
+            AI_TOOL_LABELS[ai.tool] ?? ai.tool,
+            ai.evidence.join(', ') || '—',
+            ai.confidence,
+          ]),
+        )
+      }
+
+      // ── Step 2b: Workflow setup ──────────────────────────────────────────
+
+      const workflowConfig = await runInterviewer({ yes: options.yes })
 
       // ── Step 3: Generate files ───────────────────────────────────────────
 
@@ -123,6 +155,7 @@ export function registerInit(program: Command): void {
         projectConfig,
         globalConfig,
         aiSkills,
+        workflowConfig,
       })
 
       // ── Step 4: Show generation plan ─────────────────────────────────────
@@ -170,7 +203,7 @@ export function registerInit(program: Command): void {
       await saveFingerprint(repoRoot, fingerprint)
       log.success(`Saved .openskulls/fingerprint.json`)
 
-      await saveConfig(repoRoot)
+      await saveConfig(repoRoot, workflowConfig)
       log.success(`Saved .openskulls/config.toml`)
 
       // ── Step 8: Install git hook ──────────────────────────────────────────
@@ -198,7 +231,7 @@ export function registerInit(program: Command): void {
 
 // ─── Config writer ────────────────────────────────────────────────────────────
 
-async function saveConfig(repoRoot: string): Promise<void> {
+async function saveConfig(repoRoot: string, workflowConfig: WorkflowConfig): Promise<void> {
   const configPath = join(repoRoot, '.openskulls', 'config.toml')
   const configData = {
     schema_version: '1.0.0',
@@ -207,6 +240,10 @@ async function saveConfig(repoRoot: string): Promise<void> {
       'node_modules', '.git', 'dist', 'build',
       '.venv', '__pycache__', '.next', '.nuxt', 'coverage',
     ],
+    workflow: {
+      auto_docs: workflowConfig.autoDocs,
+      auto_commit: workflowConfig.autoCommit,
+    },
   }
   await mkdir(dirname(configPath), { recursive: true })
   await writeFile(configPath, tomlStringify(configData), 'utf-8')

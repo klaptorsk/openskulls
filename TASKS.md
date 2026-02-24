@@ -23,6 +23,10 @@
 | 6 | Interviewer — structured init flow, save answers to config.toml | ⬜ Pending |
 | 7 | Dependency drift check + `openskulls audit` command | ⬜ Pending |
 | 8 | `openskulls add` — local packages only (no registry yet) | ⬜ Pending |
+| 9 | validate for other repo that it can generate skills| ⬜ Pending |
+| 10 | do we need to generate stuff in .openskulls in the destination project | ⬜ Pending |
+| 11 | fix ui be more like https://github.com/openclaw/openclaw | ⬜ Pending |
+| 12 | Ask to do task.md to create a task tracker to make visible for the user | ⬜ Pending |
 
 ---
 

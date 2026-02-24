@@ -32,15 +32,15 @@ export function subheading(text: string): void {
 
 export function panel(title: string, lines: string[], borderColor = chalk.blue): void {
   const width = Math.max(title.length + 4, ...lines.map((l) => l.length + 4), 50)
-  const top    = `╭${'─'.repeat(width)}╮`
-  const bottom = `╰${'─'.repeat(width)}╯`
+  const top       = `╭${'─'.repeat(width)}╮`
+  const bottom    = `╰${'─'.repeat(width)}╯`
   const titleLine = `│ ${borderColor.bold(title)}${' '.repeat(width - title.length - 1)}│`
-  const divider = `├${'─'.repeat(width)}┤`
+  const divLine   = `├${'─'.repeat(width)}┤`
 
   console.log(top)
   console.log(titleLine)
   if (lines.length > 0) {
-    console.log(divider)
+    console.log(divLine)
     for (const line of lines) {
       console.log(`│ ${line}${' '.repeat(Math.max(0, width - line.length - 1))}│`)
     }
@@ -49,10 +49,42 @@ export function panel(title: string, lines: string[], borderColor = chalk.blue):
 }
 
 // ─── Table ────────────────────────────────────────────────────────────────────
+//
+// Multi-column table with automatic per-column width alignment.
+// First column is rendered dim (label style).
+// Empty string cells render as a dim dash so columns stay visually aligned.
+// ANSI escape codes are stripped when measuring visible widths.
 
-export function table(rows: Array<[string, string]>, labelWidth = 20): void {
-  for (const [label, value] of rows) {
-    console.log(`  ${chalk.dim(label.padEnd(labelWidth))} ${value}`)
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1B\[[0-9;]*m/g, '')
+}
+
+function padCol(s: string, width: number): string {
+  const visible = stripAnsi(s).length
+  return s + ' '.repeat(Math.max(0, width - visible))
+}
+
+export function table(rows: string[][]): void {
+  if (rows.length === 0) return
+
+  const colCount = Math.max(...rows.map((r) => r.length))
+
+  // Measure column widths from visible characters only
+  const widths = Array.from({ length: colCount }, (_, c) =>
+    Math.max(...rows.map((r) => stripAnsi(r[c] ?? '').length)),
+  )
+
+  for (const row of rows) {
+    const cells = row.map((cell, c) => {
+      const styled =
+        cell === '' ? chalk.dim('—') :
+        c === 0     ? chalk.dim(cell) :
+        cell
+      // Pad every column except the last to keep columns aligned
+      return c < row.length - 1 ? padCol(styled, widths[c] ?? 0) : styled
+    })
+    console.log('  ' + cells.join('  '))
   }
 }
 
@@ -60,6 +92,28 @@ export function table(rows: Array<[string, string]>, labelWidth = 20): void {
 
 export function spinner(text: string): Ora {
   return ora({ text, color: 'blue' })
+}
+
+// ─── Banner ───────────────────────────────────────────────────────────────────
+
+const OPENSKULLS_ASCII = [
+  ' ███  ████  █████ █   █  ████ █   █ █   █ █     █      ████',
+  '█   █ █   █ █     ██  █ █     █  █  █   █ █     █     █    ',
+  '█   █ ████  ████  █ █ █  ███  ████  █   █ █     █      ███ ',
+  '█   █ █     █     █  ██     █ █  █  █   █ █     █         █',
+  ' ███  █     █████ █   █ ████  █   █  ███  █████ █████ ████ ',
+]
+
+const BANNER_WIDTH = 59
+
+export function banner(command: string, subtitle: string): void {
+  console.log()
+  for (const line of OPENSKULLS_ASCII) {
+    console.log(chalk.red(line))
+  }
+  console.log(chalk.dim('─'.repeat(BANNER_WIDTH)))
+  console.log(`  ${chalk.bold(command)}  ${chalk.dim('▸')}  ${chalk.dim(subtitle)}`)
+  console.log()
 }
 
 // ─── Diff preview ─────────────────────────────────────────────────────────────
