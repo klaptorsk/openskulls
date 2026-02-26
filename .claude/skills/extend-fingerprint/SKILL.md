@@ -1,45 +1,60 @@
 ---
 name: extend-fingerprint
 description: >
-  Use when adding new fields to the RepoFingerprint data model or modifying what the AI analysis collects.
-  Triggers: new fingerprint field, schema change, add to fingerprint, RepoFingerprint, Zod schema update, analysis prompt.
+  Use when adding new detected fields to RepoFingerprint or the AI analysis response.
+  Triggers: new fingerprint field, RepoFingerprint schema, AIAnalysisResponse, Zod schema, fingerprint drift, contentHash.
 ---
 
-# Extend the Fingerprint Schema
+# Extend the Repo Fingerprint Schema
 
-Reference for safely adding or changing fields in the `RepoFingerprint` Zod schema without breaking existing cached fingerprints or downstream consumers.
+Reference for safely adding new fields to the fingerprint data model and keeping Zod, AI prompt, and hash logic in sync.
 
 ## Core Rules
 
 - All schema changes go in `src/core/fingerprint/types.ts` — this is the single source of truth
-- New fields MUST have `.optional()` or a `.default()` to maintain backward compatibility with cached fingerprints on disk
-- Types are always `z.infer<typeof FingerprintSchema>` — never write manual TypeScript interfaces
-- After changing the schema, update `buildAnalysisPrompt()` in `src/core/fingerprint/prompt-builder.ts` so the AI knows to populate the new field
-- Update `createFingerprint()` and `hasDrifted()` in `src/core/fingerprint/types.ts` if drift detection must account for the new field
-- The content hash excludes `repoRoot`, `generatedAt`, and `contentHash` — verify same-codebase stability after changes
-- Validate AI responses with `FingerprintSchema.parse()` — Zod will strip unknown fields and apply defaults automatically
+- New fields must be added to the Zod schema; use `.optional()` for backwards-compatible additions
+- The `contentHash` excludes `repoRoot`, `generatedAt`, `contentHash` — no other exclusions; verify `createFingerprint()` still produces deterministic hashes after your change
+- If the AI must populate the new field, update `buildAnalysisPrompt()` in `src/core/fingerprint/prompt-builder.ts` to instruct the model
+- The AI response schema `AIAnalysisResponse` in `src/core/fingerprint/ai-collector.ts` must mirror the new field if AI-populated
+- After schema changes, re-run `openskulls init` in a test repo to validate end-to-end
+- Cached fingerprints in `.openskulls/fingerprint.json` may be stale — `hasDrifted()` handles this gracefully
 
 ## Key Files
 
-- `src/core/fingerprint/types.ts` — `RepoFingerprintSchema`, `createFingerprint()`, `hasDrifted()`
-- `src/core/fingerprint/prompt-builder.ts` — `buildAnalysisPrompt()` — instructs AI on what to return
-- `src/core/fingerprint/ai-collector.ts` — `AIFingerprintCollector`, `AIAnalysisResponse`, `stripJsonFences()`
-- `src/core/fingerprint/cache.ts` — load/save fingerprint to `.openskulls/fingerprint.json`
-- `tests/fingerprint/` — schema + collector tests
+| File | Purpose |
+|---|---|
+| `src/core/fingerprint/types.ts` | `RepoFingerprintSchema`, `createFingerprint()`, `hasDrifted()` |
+| `src/core/fingerprint/ai-collector.ts` | `AIAnalysisResponse` Zod schema, AI invocation |
+| `src/core/fingerprint/prompt-builder.ts` | `buildAnalysisPrompt()` — controls what AI detects |
+| `src/core/fingerprint/cache.ts` | `loadFingerprint()`, `saveFingerprint()` |
+
+## Pattern
+
+```typescript
+// src/core/fingerprint/types.ts — add optional field
+export const RepoFingerprintSchema = z.object({
+  // ... existing fields ...
+  myNewField: z.string().optional(),  // backwards-compatible
+})
+
+// src/core/fingerprint/ai-collector.ts — mirror in AI response
+export const AIAnalysisResponse = z.object({
+  // ... existing fields ...
+  myNewField: z.string().optional(),
+})
+```
 
 ## Anti-Patterns
 
-- Do not add required fields without defaults — cached `.openskulls/fingerprint.json` files will fail `parse()`
-- Do not write manual TypeScript types alongside Zod schemas — use `z.infer<>` exclusively
-- Do not include the new field in the content hash computation unless drift on that field should trigger a sync
-- Do not forget to update the AI prompt — the schema change is invisible to the AI unless the prompt explains the new field
+- Do not add required fields without a migration path — existing cached fingerprints will fail Zod parse
+- Do not modify `contentHash` exclusion logic without updating tests for determinism
+- Do not add fields to the AI response schema without updating the prompt — the model won't know to populate them
 
 ## Checklist
 
-- [ ] New field added to `RepoFingerprintSchema` with `.optional()` or `.default()`
-- [ ] `buildAnalysisPrompt()` updated to describe the new field to the AI
-- [ ] `createFingerprint()` updated if the field needs a computed initial value
-- [ ] `hasDrifted()` updated if drift on the new field should trigger re-sync
-- [ ] Existing snapshot tests still pass (content hash stability)
-- [ ] New unit test covers the schema change and prompt output
+- [ ] Field added to `RepoFingerprintSchema` in `types.ts`
+- [ ] `AIAnalysisResponse` updated in `ai-collector.ts` if AI-populated
+- [ ] `buildAnalysisPrompt()` updated to instruct the model
+- [ ] `createFingerprint()` / `hasDrifted()` still work correctly
+- [ ] Tests updated or added for the new field
 - [ ] `npm test` passes

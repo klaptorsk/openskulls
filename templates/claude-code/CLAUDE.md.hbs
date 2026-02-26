@@ -100,6 +100,19 @@ No conventions detected automatically. Add them here manually.
 <!-- /openskulls:section:workflow_rules -->
 
 {{/if}}
+{{#if userAnswerEntries.length}}
+<!-- openskulls:section:user_config -->
+## Project Configuration
+
+> Configured during `openskulls init`. Re-run `openskulls init` to update.
+
+{{#each userAnswerEntries}}
+- **{{titlecase this.key}}**: {{this.value}}
+{{/each}}
+
+<!-- /openskulls:section:user_config -->
+
+{{/if}}
 <!-- openskulls:section:agent_guidance -->
 ## Agent Guidance
 

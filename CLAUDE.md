@@ -18,7 +18,9 @@ Primary language: **TypeScript**.
 - **zod** 3.23.8 (utility)
 - **handlebars** 4.7.8 (utility)
 - **simple-git** 3.25.0 (utility)
-- **vitest** 2.0.0 (testing)
+- **chalk** 5.3.0 (utility)
+- **ora** 8.1.0 (utility)
+- **smol-toml** 1.3.1 (utility)
 
 <!-- /openskulls:section:tech_stack -->
 
@@ -107,3 +109,11 @@ Primary language: **TypeScript**.
 | 6 | Git hook installer + non-blocking `openskulls sync` | ⬜ |
 | 7 | Dependency drift check + `openskulls audit` | ⬜ |
 | 8 | `openskulls add` — local packages only | ⬜ |
+
+<!-- openskulls:section:workflow_rules -->
+## Workflow Rules
+
+- **Documentation**: After adding or updating a feature, always update README.md and any relevant documentation files before marking the task complete.
+- **Commits**: After completing a feature or fix, stage the relevant changed files and create a git commit with an appropriate message.
+
+<!-- /openskulls:section:workflow_rules -->

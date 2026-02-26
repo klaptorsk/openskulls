@@ -51,6 +51,17 @@ export const WorkflowConfig = z.object({
 })
 export type WorkflowConfig = z.infer<typeof WorkflowConfig>
 
+/**
+ * Full user context collected during `openskulls init`.
+ * Combines static workflow preferences with AI-generated Q&A answers.
+ * The qa map is persisted under [workflow.answers] in config.toml.
+ */
+export const UserContext = z.object({
+  workflowConfig: WorkflowConfig,
+  qa: z.record(z.string(), z.string()).default({}),
+})
+export type UserContext = z.infer<typeof UserContext>
+
 export const ProjectConfig = z.object({
   schemaVersion: z.string().default('1.0.0'),
 

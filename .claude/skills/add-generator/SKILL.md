@@ -1,45 +1,63 @@
 ---
 name: add-generator
 description: >
-  Use when adding a new generator that produces AI-readable output files.
-  Triggers: new generator, GeneratedFile, BaseGenerator, emit file, generate output, template render.
+  Use when adding a new generator that emits files into the user's repo.
+  Triggers: new generator, GeneratedFile, repoFile, personalFile, Handlebars template, generated output file.
 ---
 
 # Add a File Generator
 
-Reference for adding generators that produce `GeneratedFile[]` following the no-I/O generator contract.
+Reference for creating a new generator that follows the no-I/O `GeneratedFile[]` return convention.
 
 ## Core Rules
 
-- Generators MUST return `GeneratedFile[]` — never call `fs.writeFile` or any I/O inside a generator
-- Extend `BaseGenerator` from `src/core/generators/base.ts`
-- Use `repoFile(path, content)` for files written to the project repo (e.g. `CLAUDE.md`)
-- Use `personalFile(path, content)` for files that go in personal/global config dirs
-- Accept a `RepoFingerprint` (from `src/core/fingerprint/types.ts`) as the primary data source
-- Use `mergeSections()` from `src/core/generators/merge.ts` when the output file uses tagged sections that must survive re-runs
-- Render templates via Handlebars from `templates/<name>/` — keep template logic minimal
+- Generators extend `BaseGenerator` from `src/core/generators/base.ts`
+- Generators MUST return `GeneratedFile[]` — zero file writes, zero side effects
+- Use `repoFile(path, content)` for files committed to the repo; `personalFile(path, content)` for user-local files
+- Accept `RepoFingerprint` (from `src/core/fingerprint/types.ts`) as the data source — never scan the filesystem
+- Handlebars templates live in `templates/` and are loaded at runtime
+- If a file supports section merging, set `merge_sections: true` on the `GeneratedFile`
+- Validate all inputs with Zod before rendering
 
 ## Key Files
 
-- `src/core/generators/base.ts` — `GeneratedFile`, `BaseGenerator`, `repoFile()`, `personalFile()`
-- `src/core/generators/claude-code.ts` — Full example: CLAUDE.md + skills + settings output
-- `src/core/generators/merge.ts` — `mergeSections()`, `parseChunks()`, `extractSections()`
-- `src/core/fingerprint/types.ts` — `RepoFingerprint` Zod schema (generator input)
-- `templates/claude-code/CLAUDE.md.hbs` — Handlebars template example with tagged sections
+| File | Purpose |
+|---|---|
+| `src/core/generators/base.ts` | `BaseGenerator`, `GeneratedFile`, `repoFile()`, `personalFile()` |
+| `src/core/generators/claude-code.ts` | Reference implementation — CLAUDE.md + skills |
+| `src/core/generators/merge.ts` | `mergeSections()` for section-aware merging |
+| `templates/claude-code/CLAUDE.md.hbs` | Handlebars template example |
+| `src/core/fingerprint/types.ts` | `RepoFingerprint` Zod schema |
+
+## Pattern
+
+```typescript
+// src/core/generators/my-generator.ts
+import { BaseGenerator, GeneratedFile, repoFile } from './base.js'
+import type { RepoFingerprint } from '../fingerprint/types.js'
+import Handlebars from 'handlebars'
+import { readFileSync } from 'fs'
+
+export class MyGenerator extends BaseGenerator {
+  generate(fingerprint: RepoFingerprint): GeneratedFile[] {
+    const tpl = Handlebars.compile(readFileSync('templates/my/file.hbs', 'utf8'))
+    return [
+      repoFile('.my-output/file.md', tpl({ fingerprint }))
+    ]
+  }
+}
+```
 
 ## Anti-Patterns
 
-- Do not write files inside a generator — the CLI layer owns all I/O via `writeGeneratedFile()`
-- Do not access `process.cwd()` or environment variables inside a generator — accept paths via constructor
-- Do not use conditional logic inside Handlebars templates; compute derived values in TypeScript before passing to the template context
-- Do not skip `mergeSections()` for files with `<!-- openskulls:section: -->` tags — user edits outside tagged sections must be preserved
+- Do not call `fs.writeFileSync` or any I/O inside a generator — callers own the write step
+- Do not hardcode file content as strings inline when a template would be cleaner
+- Do not accept raw filesystem paths as input — use the fingerprint data model
 
 ## Checklist
 
 - [ ] Generator extends `BaseGenerator` and returns `GeneratedFile[]`
-- [ ] No `fs` imports inside the generator file
-- [ ] Template added to `templates/<name>/` if Handlebars is used
-- [ ] Generator instantiated and called inside the relevant command (`init.ts` or `sync.ts`)
-- [ ] `mergeSections()` used if output file has tagged sections
-- [ ] Unit tests added under `tests/generators/`
+- [ ] Template added to `templates/` if Handlebars is used
+- [ ] Registered and called from the relevant CLI command
+- [ ] Unit test covers the returned file paths and content
 - [ ] `npm test` passes

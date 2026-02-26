@@ -62,6 +62,7 @@ export interface GeneratorInput {
   readonly globalConfig: GlobalConfig
   readonly aiSkills?: readonly AISkill[]
   readonly workflowConfig?: WorkflowConfig
+  readonly userAnswers?: Record<string, string>
 }
 
 // ─── Interface ────────────────────────────────────────────────────────────────

@@ -31,9 +31,10 @@ export type AISkillsResponse = z.infer<typeof AISkillsResponse>
 export async function generateAISkills(
   fingerprint: RepoFingerprint,
   logger?: VerboseLogger,
+  qa?: Record<string, string>,
 ): Promise<AISkill[]> {
   const cliCommand = await detectAICLI()
-  const prompt = buildSkillsPrompt(fingerprint)
+  const prompt = buildSkillsPrompt(fingerprint, qa)
   const raw = await invokeAICLI(cliCommand, prompt, 120_000, logger)
   const parsed = AISkillsResponse.parse(JSON.parse(stripJsonFences(raw)))
   return parsed.skills

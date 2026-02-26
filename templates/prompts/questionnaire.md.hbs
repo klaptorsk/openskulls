@@ -1,0 +1,61 @@
+{{!--
+  Questionnaire prompt — sent to the AI CLI to generate repo-specific setup questions.
+
+  Template variables:
+    {{{projectSummary}}} — key-value lines assembled from the RepoFingerprint
+
+  The AI returns questions that can't be answered by reading the code — user intent,
+  team preferences, architectural decisions, and domain-specific concerns.
+--}}
+You are generating a setup questionnaire for a software project to configure AI coding assistance. Return ONLY a JSON object — no explanation, no markdown fences, no commentary.
+
+Project context:
+{{{projectSummary}}}
+
+Generate 4–8 targeted questions whose answers would meaningfully improve AI assistance in this project. Focus ONLY on things that CANNOT be determined by reading the code — user intent, team conventions, architectural priorities, and domain-specific concerns.
+
+The JSON must match this schema exactly:
+
+{
+  "questions": [
+    {
+      "id": "migration_safety",
+      "category": "rules",
+      "text": "We detected Prisma ORM. Should the AI enforce database migration review before suggesting schema changes?",
+      "context": "Helps the AI flag migration risks when generating database-related code.",
+      "type": "yesno",
+      "default": "yes"
+    },
+    {
+      "id": "api_versioning",
+      "category": "architect",
+      "text": "No API versioning strategy was detected. How should breaking API changes be handled?",
+      "context": "Shapes the architect agent's review criteria for API contract changes.",
+      "type": "choice",
+      "choices": ["semver in URL (/v1/)", "Accept-Version header", "deprecation headers only", "skip"],
+      "default": "semver in URL (/v1/)"
+    }
+  ]
+}
+
+Field rules:
+- "id": snake_case, lowercase letters and numbers only — becomes the config key (e.g. "migration_safety")
+- "category": exactly one of:
+    "rules"     — a coding convention or constraint the AI should enforce
+    "workflow"  — an automation preference (docs, commit, review behaviour)
+    "agents"    — which specialised agents to generate (beyond architect)
+    "architect" — domain expertise or review focus for the architect agent
+- "text": the question shown to the user. Lead with what was detected, then ask the preference.
+- "context": one sentence — why this matters and how the answer affects AI behaviour. Written as a completed fact, not a question.
+- "type": "yesno" | "choice" | "text"
+- "choices": required array of 2–4 strings when type is "choice". Always include a "skip" option for optional questions.
+- "default": the recommended default as a string (matches one of "choices", or "yes"/"no" for yesno)
+
+Constraints:
+- Do NOT ask about things already obvious from the code (e.g. which language, which framework).
+- Do NOT generate generic questions that apply to any project.
+- Focus on what makes THIS project unique — its specific stack, architecture gaps, and domain.
+- Prefer "rules" and "architect" categories — they produce the highest-quality AI output.
+- 4 questions minimum, 8 maximum.
+
+Return only the JSON object. No markdown fences. No explanation.

@@ -1,27 +1,37 @@
 /**
  * Workflow setup interviewer.
  *
- * Asks quick questions after repo analysis to configure how Claude
- * should handle documentation updates, commits, architect reviews,
- * and skill generation in this repo.
- * Answers are saved to .openskulls/config.toml as [workflow].
+ * Two-part setup flow:
+ *  Part A — Static workflow questions (always asked, no AI required):
+ *            auto-docs, auto-commit, architect on/off.
+ *  Part B — Dynamic AI questions (repo-specific, generated from fingerprint):
+ *            Rendered from AIQuestion[] returned by generateQuestionnaire().
+ *            Skipped silently if aiQuestions is empty.
+ *
+ * Returns a UserContext combining WorkflowConfig + qa answer map.
+ * Answers are saved to .openskulls/config.toml as [workflow] and [workflow.answers].
  */
 
 import { createInterface } from 'node:readline/promises'
-import type { WorkflowConfig } from '../../core/config/types.js'
-import { divider, heading, log } from '../ui/console.js'
+import type { AIQuestion } from '../../core/fingerprint/questionnaire-builder.js'
+import type { UserContext, WorkflowConfig } from '../../core/config/types.js'
+import { divider, heading, log, subheading } from '../ui/console.js'
 
 export async function runInterviewer(
   opts: { yes?: boolean } = {},
-): Promise<WorkflowConfig> {
+  aiQuestions: AIQuestion[] = [],
+): Promise<UserContext> {
   if (opts.yes) {
     return {
-      autoDocs: 'ask',
-      autoCommit: 'ask',
-      architectEnabled: false,
-      architectDomain: '',
-      architectReview: 'ask',
-      useSubagents: false,
+      workflowConfig: {
+        autoDocs: 'ask',
+        autoCommit: 'ask',
+        architectEnabled: false,
+        architectDomain: '',
+        architectReview: 'ask',
+        useSubagents: false,
+      },
+      qa: {},
     }
   }
 
@@ -31,6 +41,11 @@ export async function runInterviewer(
   divider()
   heading('Workflow setup')
   log.info('A few quick questions to configure how Claude works in this repo.')
+  log.blank()
+
+  // ── Part A: Static workflow questions ─────────────────────────────────────
+
+  subheading('Workflow preferences')
   log.blank()
 
   // Question 1 — auto-docs
@@ -93,8 +108,64 @@ export async function runInterviewer(
   const subagentAnswer = (await rl.question('\n  → [1/2]  ')).trim()
   const useSubagents = subagentAnswer === '2'
 
+  const workflowConfig: WorkflowConfig = {
+    autoDocs, autoCommit, architectEnabled, architectDomain, architectReview, useSubagents,
+  }
+
+  // ── Part B: Dynamic AI questions ──────────────────────────────────────────
+
+  const qa: Record<string, string> = {}
+
+  if (aiQuestions.length > 0) {
+    log.blank()
+    subheading('Project-specific setup')
+    log.info('Based on what was detected in this repo:')
+    log.blank()
+
+    for (const question of aiQuestions) {
+      console.log(`  ${question.text}`)
+      console.log(`  (${question.context})`)
+      log.blank()
+
+      let answer: string
+
+      if (question.type === 'yesno') {
+        const defaultHint = question.default === 'yes' ? ' ← default' : ''
+        const altHint = question.default === 'no' ? ' ← default' : ''
+        console.log(`    y  Yes${question.default === 'yes' ? defaultHint : ''}`)
+        console.log(`    n  No${question.default === 'no' ? altHint : ''}`)
+        const raw = (await rl.question('\n  → [y/n]  ')).trim().toLowerCase()
+        if (raw === 'y' || raw === 'yes') {
+          answer = 'yes'
+        } else if (raw === 'n' || raw === 'no') {
+          answer = 'no'
+        } else {
+          answer = question.default ?? 'yes'
+        }
+      } else if (question.type === 'choice' && question.choices) {
+        question.choices.forEach((choice, i) => {
+          const isDefault = choice === question.default
+          console.log(`    ${i + 1}  ${choice}${isDefault ? '  ← default' : ''}`)
+        })
+        const raw = (await rl.question(`\n  → [1-${question.choices.length}]  `)).trim()
+        const idx = parseInt(raw, 10) - 1
+        answer = (idx >= 0 && idx < question.choices.length)
+          ? question.choices[idx]!
+          : (question.default ?? question.choices[0]!)
+      } else {
+        // text
+        const defaultHint = question.default ? ` (default: ${question.default})` : ''
+        const raw = (await rl.question(`  → ${defaultHint}  `)).trim()
+        answer = raw || question.default || ''
+      }
+
+      qa[question.id] = answer
+      log.blank()
+    }
+  }
+
   rl.close()
   divider()
 
-  return { autoDocs, autoCommit, architectEnabled, architectDomain, architectReview, useSubagents }
+  return { workflowConfig, qa }
 }

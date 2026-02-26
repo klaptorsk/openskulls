@@ -4,3 +4,11 @@ exclude_paths = [ "node_modules", ".git", "dist", "build", ".venv", "__pycache__
 [[targets]]
 name = "claude_code"
 enabled = true
+
+[[targets]]
+name = "copilot"
+enabled = false
+
+[workflow]
+auto_docs = "always"
+auto_commit = "always"

@@ -12,8 +12,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { constants } from 'node:fs'
-import { access, readFile, readdir } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
 import { z } from 'zod'
 import type { ProjectConfig } from '../config/types.js'
@@ -68,8 +67,23 @@ const DEFAULT_EXCLUDE = new Set([
 const MAX_DEPTH = 6
 const MAX_CONFIG_FILE_BYTES = 32_768
 
+/**
+ * Describes how to invoke an AI CLI.
+ *   stdin — prompt written to child.stdin (e.g. `claude -p -`)
+ *   arg   — prompt passed as the argument to -p (e.g. `codex -p "..."`)
+ */
+export interface AICLIAdapter {
+  command: string
+  invoke: 'stdin' | 'arg'
+  version?: string
+}
+
 /** AI CLI commands to search for, in priority order. */
-const AI_CLI_CANDIDATES = ['claude']
+const AI_CLI_CANDIDATES: AICLIAdapter[] = [
+  { command: 'claude',  invoke: 'stdin' },
+  { command: 'codex',   invoke: 'arg'   },
+  { command: 'copilot', invoke: 'arg'   },
+]
 
 // ─── AI Analysis Response schema ──────────────────────────────────────────────
 
@@ -170,30 +184,51 @@ export class AIFingerprintCollector {
 
 // ─── AI CLI detection ─────────────────────────────────────────────────────────
 
-export async function detectAICLI(): Promise<string> {
-  const pathSep = process.platform === 'win32' ? ';' : ':'
-  const pathDirs = (process.env['PATH'] ?? '').split(pathSep)
+/**
+ * Run `command --version` and return the first line of output.
+ * Checks both stdout and stderr (some CLIs write version to stderr).
+ * Resolves with the version string on exit code 0, rejects otherwise.
+ */
+async function runVersion(command: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, ['--version'])
+    let out = ''
 
-  for (const cmd of AI_CLI_CANDIDATES) {
-    for (const dir of pathDirs) {
-      try {
-        await access(join(dir, cmd), constants.X_OK)
-        return cmd
-      } catch {
-        // not in this directory
+    child.stdout.on('data', (d: Buffer) => { out += d.toString() })
+    child.stderr.on('data', (d: Buffer) => { out += d.toString() })
+
+    child.on('error', reject)
+
+    child.on('close', (code: number | null) => {
+      const firstLine = out.trim().split('\n')[0]?.trim() ?? ''
+      if (code === 0 && firstLine) {
+        resolve(firstLine)
+      } else {
+        reject(new Error(`${command} --version exited ${String(code)}`))
       }
+    })
+  })
+}
+
+export async function detectAICLI(): Promise<AICLIAdapter> {
+  for (const candidate of AI_CLI_CANDIDATES) {
+    try {
+      const version = await runVersion(candidate.command)
+      return { ...candidate, version }
+    } catch {
+      // CLI not available — try next
     }
   }
 
   throw new Error(
-    'No AI CLI found in PATH.\nInstall Claude Code: https://claude.ai/code',
+    'No AI CLI found in PATH.\nInstall Claude Code (https://claude.ai/code), Codex, or Copilot.',
   )
 }
 
 // ─── AI CLI invocation ────────────────────────────────────────────────────────
 
 export async function invokeAICLI(
-  command: string,
+  adapter: AICLIAdapter,
   prompt: string,
   timeoutMs = 120_000,
   logger?: VerboseLogger,
@@ -201,7 +236,10 @@ export async function invokeAICLI(
   logger?.onPrompt(prompt)
 
   return new Promise((resolve, reject) => {
-    const child = spawn(command, ['-p', '-'])
+    // stdin style: `claude -p -`  — prompt written to child.stdin
+    // arg style:   `codex -p "…"` — prompt passed as the -p argument
+    const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
+    const child = spawn(adapter.command, args)
     let out = ''
     let err = ''
 
@@ -212,7 +250,6 @@ export async function invokeAICLI(
 
     child.stdout.on('data', (d: Buffer) => { out += d.toString() })
     child.stderr.on('data', (d: Buffer) => { err += d.toString() })
-    child.stdin.on('error', () => { /* ignore broken pipe */ })
 
     child.on('error', (e: Error) => {
       clearTimeout(timer)
@@ -225,12 +262,15 @@ export async function invokeAICLI(
         logger?.onResponse(out)
         resolve(out)
       } else {
-        reject(new Error(`${command} exited ${String(code)}: ${err}`))
+        reject(new Error(`${adapter.command} exited ${String(code)}: ${err}`))
       }
     })
 
-    child.stdin.write(prompt)
-    child.stdin.end()
+    if (adapter.invoke === 'stdin') {
+      child.stdin.on('error', () => { /* ignore broken pipe */ })
+      child.stdin.write(prompt)
+      child.stdin.end()
+    }
   })
 }
 

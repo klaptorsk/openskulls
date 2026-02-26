@@ -2,13 +2,18 @@
  * openskulls init — first-time setup for a repository.
  *
  * Flow:
- *  1. Analyse repo with FingerprintCollector
+ *  1. Analyse repo with AIFingerprintCollector
  *  2. Show detected signals
- *  3. Run ClaudeCodeGenerator → GeneratedFile[]
- *  4. Show generation plan (what will be written)
- *  5. Confirm (skip with --yes)
- *  6. Write files (merge_sections for CLAUDE.md, replace otherwise)
- *  7. Save fingerprint.json and config.toml
+ *  3. Generate AI questionnaire (repo-specific questions from fingerprint)
+ *  4. Run interviewer (static workflow Qs + dynamic AI Qs)
+ *  5. Generate AI skills (with user answers)
+ *  6. Generate architect skill if enabled (with user answers)
+ *  7. Run generators → GeneratedFile[]
+ *  8. Show generation plan (what will be written)
+ *  9. Confirm (skip with --yes)
+ * 10. Write files (merge_sections for CLAUDE.md, replace otherwise)
+ * 11. Save fingerprint.json and config.toml (includes qa answers)
+ * 12. Install git hook
  */
 
 import { createInterface } from 'node:readline/promises'
@@ -17,15 +22,18 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { stringify as tomlStringify } from 'smol-toml'
+import chalk from 'chalk'
 import type { Command } from 'commander'
-import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
+import { AIFingerprintCollector, detectAICLI, type AICLIAdapter, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
+import { generateQuestionnaire, type AIQuestion } from '../../core/fingerprint/questionnaire-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
 import { CopilotGenerator } from '../../core/generators/copilot.js'
+import { CodexGenerator } from '../../core/generators/codex.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
-import { defaultProjectConfig, defaultGlobalConfig, type WorkflowConfig } from '../../core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
 import {
   banner, divider, fatal, fileList, heading, log, spinner, subheading, table, verboseBlock,
 } from '../ui/console.js'
@@ -49,6 +57,28 @@ export function registerInit(program: Command): void {
       const repoRoot = resolve(path)
 
       banner('init', repoRoot)
+
+      // ── Step 0: Detect AI engine ──────────────────────────────────────────
+
+      const CLI_NAMES: Record<string, string> = {
+        claude:  'Claude Code',
+        codex:   'Codex',
+        copilot: 'GitHub Copilot',
+      }
+
+      // fatal() returns `never`, so TypeScript narrows adapter to AICLIAdapter
+      const adapter: AICLIAdapter = await detectAICLI().catch(() =>
+        fatal(
+          'No AI CLI found in PATH.',
+          'Install Claude Code (https://claude.ai/code), Codex, or Copilot.',
+        )
+      )
+
+      const displayName = CLI_NAMES[adapter.command] ?? adapter.command
+      const versionHint = adapter.version ? ` ${adapter.version}` : ''
+      log.success(`AI engine: ${displayName}${chalk.dim(`${versionHint} (${adapter.command})`)}`)
+
+      log.blank()
 
       // ── Step 1: Analyse ──────────────────────────────────────────────────
 
@@ -74,28 +104,6 @@ export function registerInit(program: Command): void {
       if (options.verbose) {
         verboseBlock('Analysis prompt', analysisCapture.prompt)
         verboseBlock('Analysis response', analysisCapture.response)
-      }
-
-      // ── Step 1b: Generate AI skills ──────────────────────────────────────
-
-      const skillsSpin = spinner('Generating project skills…').start()
-      let aiSkills: AISkill[] = []
-      const skillsCapture = { prompt: '', response: '' }
-      try {
-        const skillsLogger: VerboseLogger = {
-          onPrompt:   (p) => { skillsCapture.prompt = p },
-          onResponse: (r) => { skillsCapture.response = r },
-        }
-        aiSkills = await generateAISkills(fingerprint, skillsLogger)
-        skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
-      } catch (err) {
-        skillsSpin.warn('Could not generate skills — skipping')
-        log.info(err instanceof Error ? err.message : String(err))
-        // Non-fatal: init continues without skills
-      }
-      if (options.verbose) {
-        verboseBlock('Skills prompt', skillsCapture.prompt)
-        verboseBlock('Skills response', skillsCapture.response)
       }
 
       // ── Step 2: Show detected signals ────────────────────────────────────
@@ -160,11 +168,61 @@ export function registerInit(program: Command): void {
         )
       }
 
-      // ── Step 2b: Workflow setup ──────────────────────────────────────────
+      // ── Step 3: Generate AI questionnaire ────────────────────────────────
 
-      const workflowConfig = await runInterviewer({ yes: options.yes })
+      let aiQuestions: AIQuestion[] = []
+      const questionnaireCapture = { prompt: '', response: '' }
 
-      // ── Step 2c: Architect skill (if enabled) ────────────────────────────
+      if (!options.yes) {
+        const qSpin = spinner('Generating project-specific questions…').start()
+        try {
+          const questionnaireLogger: VerboseLogger = {
+            onPrompt:   (p) => { questionnaireCapture.prompt = p },
+            onResponse: (r) => { questionnaireCapture.response = r },
+          }
+          aiQuestions = await generateQuestionnaire(fingerprint, questionnaireLogger)
+          if (aiQuestions.length > 0) {
+            qSpin.succeed(`Generated ${aiQuestions.length} contextual questions`)
+          } else {
+            qSpin.info('No contextual questions generated')
+          }
+        } catch (err) {
+          qSpin.warn('Could not generate contextual questions — using defaults')
+          log.info(err instanceof Error ? err.message : String(err))
+        }
+        if (options.verbose) {
+          verboseBlock('Questionnaire prompt', questionnaireCapture.prompt)
+          verboseBlock('Questionnaire response', questionnaireCapture.response)
+        }
+      }
+
+      // ── Step 4: Run interviewer (static + AI questions) ──────────────────
+
+      const userContext = await runInterviewer({ yes: options.yes }, aiQuestions)
+      const { workflowConfig, qa } = userContext
+
+      // ── Step 5: Generate AI skills (with user context) ───────────────────
+
+      const skillsSpin = spinner('Generating project skills…').start()
+      let aiSkills: AISkill[] = []
+      const skillsCapture = { prompt: '', response: '' }
+      try {
+        const skillsLogger: VerboseLogger = {
+          onPrompt:   (p) => { skillsCapture.prompt = p },
+          onResponse: (r) => { skillsCapture.response = r },
+        }
+        aiSkills = await generateAISkills(fingerprint, skillsLogger, Object.keys(qa).length > 0 ? qa : undefined)
+        skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
+      } catch (err) {
+        skillsSpin.warn('Could not generate skills — skipping')
+        log.info(err instanceof Error ? err.message : String(err))
+      }
+      if (options.verbose) {
+        verboseBlock('Skills prompt', skillsCapture.prompt)
+        verboseBlock('Skills response', skillsCapture.response)
+      }
+
+      // ── Step 6: Architect skill (if enabled, with user context) ──────────
 
       if (workflowConfig.architectEnabled) {
         const archSpin = spinner('Generating architect skill…').start()
@@ -174,7 +232,12 @@ export function registerInit(program: Command): void {
             onPrompt:   (p) => { archCapture.prompt = p },
             onResponse: (r) => { archCapture.response = r },
           }
-          const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger)
+          const architectSkill = await generateArchitectSkill(
+            fingerprint,
+            workflowConfig,
+            archLogger,
+            Object.keys(qa).length > 0 ? qa : undefined,
+          )
           aiSkills = [architectSkill, ...aiSkills]
           archSpin.succeed('Generated architect skill')
         } catch (err) {
@@ -187,7 +250,7 @@ export function registerInit(program: Command): void {
         }
       }
 
-      // ── Step 3: Generate files ───────────────────────────────────────────
+      // ── Step 7: Generate files ───────────────────────────────────────────
 
       const projectConfig = defaultProjectConfig()
       const globalConfig  = defaultGlobalConfig()
@@ -199,18 +262,38 @@ export function registerInit(program: Command): void {
         globalConfig,
         aiSkills,
         workflowConfig,
+        userAnswers: Object.keys(qa).length > 0 ? qa : undefined,
       }
 
-      const generatedFiles: GeneratedFile[] = [
-        ...new ClaudeCodeGenerator().generate(generatorInput),
-      ]
+      // Map engine command → tool ID used in generator selection
+      const ENGINE_TO_TOOL: Record<string, string> = {
+        claude:  'claude_code',
+        codex:   'codex',
+        copilot: 'copilot',
+      }
 
-      const detectedTools = fingerprint.aiCLIs.map((a) => a.tool)
-      if (detectedTools.includes('copilot')) {
+      // Union of: the active engine + any AI tools already configured in the repo
+      const toolsToGenerate = new Set<string>([
+        ENGINE_TO_TOOL[adapter.command] ?? adapter.command,
+        ...fingerprint.aiCLIs.map((a) => a.tool),
+      ])
+
+      const generatedFiles: GeneratedFile[] = []
+
+      if (toolsToGenerate.has('claude_code')) {
+        generatedFiles.push(...new ClaudeCodeGenerator().generate(generatorInput))
+      }
+      if (toolsToGenerate.has('codex')) {
+        generatedFiles.push(...new CodexGenerator().generate(generatorInput))
+      }
+      if (toolsToGenerate.has('copilot')) {
         generatedFiles.push(...new CopilotGenerator().generate(generatorInput))
       }
+      // cursor: detected in repo signals but no generator yet
 
-      // ── Step 4: Show generation plan ─────────────────────────────────────
+      const detectedTools = [...toolsToGenerate]
+
+      // ── Step 8: Show generation plan ─────────────────────────────────────
 
       log.blank()
       heading('Generation plan')
@@ -230,7 +313,7 @@ export function registerInit(program: Command): void {
         process.exit(0)
       }
 
-      // ── Step 5: Confirm ──────────────────────────────────────────────────
+      // ── Step 9: Confirm ──────────────────────────────────────────────────
 
       if (!options.yes) {
         const rl = createInterface({ input: process.stdin, output: process.stdout })
@@ -242,7 +325,7 @@ export function registerInit(program: Command): void {
         }
       }
 
-      // ── Step 6: Write files ──────────────────────────────────────────────
+      // ── Step 10: Write files ─────────────────────────────────────────────
 
       log.blank()
       for (const { file, absPath, action } of plan) {
@@ -250,15 +333,15 @@ export function registerInit(program: Command): void {
         log.success(`${action === 'create' ? 'Created' : 'Updated'} ${absPath}`)
       }
 
-      // ── Step 7: Save fingerprint + config ────────────────────────────────
+      // ── Step 11: Save fingerprint + config ───────────────────────────────
 
       await saveFingerprint(repoRoot, fingerprint)
       log.success(`Saved .openskulls/fingerprint.json`)
 
-      await saveConfig(repoRoot, workflowConfig, detectedTools)
+      await saveConfig(repoRoot, workflowConfig, detectedTools, qa)
       log.success(`Saved .openskulls/config.toml`)
 
-      // ── Step 8: Install git hook ──────────────────────────────────────────
+      // ── Step 12: Install git hook ─────────────────────────────────────────
 
       const gitDir = join(repoRoot, '.git')
       if (existsSync(gitDir)) {
@@ -283,12 +366,13 @@ export function registerInit(program: Command): void {
 
 // ─── Config writer ────────────────────────────────────────────────────────────
 
-const ALL_TARGETS = ['claude_code', 'copilot'] as const
+const ALL_TARGETS = ['claude_code', 'codex', 'copilot'] as const
 
 async function saveConfig(
   repoRoot: string,
-  workflowConfig: WorkflowConfig,
+  workflowConfig: import('../../core/config/types.js').WorkflowConfig,
   detectedTools: string[],
+  qa: Record<string, string>,
 ): Promise<void> {
   const configPath = join(repoRoot, '.openskulls', 'config.toml')
   const targets = ALL_TARGETS.map((name) => ({
@@ -309,6 +393,7 @@ async function saveConfig(
       architect_domain:  workflowConfig.architectDomain,
       architect_review:  workflowConfig.architectReview,
       use_subagents:     workflowConfig.useSubagents,
+      ...(Object.keys(qa).length > 0 ? { answers: qa } : {}),
     },
   }
   await mkdir(dirname(configPath), { recursive: true })

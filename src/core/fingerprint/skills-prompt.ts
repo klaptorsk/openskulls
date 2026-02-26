@@ -20,7 +20,7 @@ const TEMPLATE_PATH = join(__dirname, '../../../templates/prompts/skills.md.hbs'
 const TEMPLATE_SOURCE = readFileSync(TEMPLATE_PATH, 'utf-8')
 const COMPILED = Handlebars.compile(TEMPLATE_SOURCE, { noEscape: true })
 
-export function buildSkillsPrompt(fingerprint: RepoFingerprint): string {
+export function buildSkillsPrompt(fingerprint: RepoFingerprint, qa?: Record<string, string>): string {
   const {
     repoName,
     description,
@@ -74,6 +74,11 @@ export function buildSkillsPrompt(fingerprint: RepoFingerprint): string {
       .map((c) => `${c.name}=${c.value}`)
       .join(', ')
     parts.push(`Conventions: ${convStr}`)
+  }
+
+  if (qa && Object.keys(qa).length > 0) {
+    const prefLines = Object.entries(qa).map(([k, v]) => `- ${k}: ${v}`)
+    parts.push(`User preferences:\n${prefLines.join('\n')}`)
   }
 
   return COMPILED({ projectSummary: parts.join('\n') })

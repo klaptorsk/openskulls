@@ -18,9 +18,10 @@
 | R-1 | Generator refactor — extract shared helpers (`STYLE_LABELS`, `isConventionalCommits()`, `buildWorkflowRules()`) from both generators into `base.ts` or a new `shared.ts` | ✅ Done |
 | R-2 | Generator registry — add `src/core/generators/registry.ts` with `getBuiltinGenerators()`, handling always-on vs detection-based generators | ⬜ Pending |
 | R-3 | Wire registry into CLI — replace hardcoded generator instantiation in `init.ts` and `sync.ts` (3 call sites) with registry lookup | ⬜ Pending |
-| 6 | Interviewer — structured init flow, save answers to config.toml | ⬜ Pending |
+| 6 | Interviewer — superseded by T-6 (AI-driven questionnaire). Static workflow questions (auto-docs, auto-commit, architect) kept; AI adds domain-specific questions on top. | 🔄 Superseded by T-6 |
 | 7 | Dependency drift check + `openskulls audit` command | ⬜ Pending |
 | 8 | `openskulls add` — local packages only (no registry yet) | ⬜ Pending |
+| 14 | Skills remote — user configures a git remote (GitHub, GitLab, etc.) as their personal skills store; `openskulls skills push` publishes skills to that repo, `openskulls skills pull` fetches them into a new project | ⬜ Pending |
 | 9 | Validate against a real external repo — confirm skill generation works end-to-end | ⬜ Pending |
 | 10 | Decide: do we write anything into `.openskulls/` in the destination project? | ⬜ Pending |
 | 11 | UI polish — align style with https://github.com/openclaw/openclaw | ⬜ Pending |
@@ -33,7 +34,7 @@
 
 | # | Task | Status |
 |---|---|---|
-| T-6 | Intelligent questionnaire — infra, DBs, performance priorities, platform (extends task 6) | ⬜ Pending |
+| T-6 | AI-driven contextual questionnaire — fingerprint → AI generates repo-specific questions → user answers feed into skills + architect + CLAUDE.md rules. | ✅ Done |
 | T-8 | Workflow automation — help users define and maintain agentic skills/instructions | ⬜ Pending |
 | T-10 | Optional agentic engineering workflow layer for any developer | ⬜ Pending |
 

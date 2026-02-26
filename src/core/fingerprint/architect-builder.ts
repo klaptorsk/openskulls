@@ -32,6 +32,7 @@ const COMPILED = hbs.compile(TEMPLATE_SOURCE, { noEscape: true })
 export function buildArchitectPrompt(
   fingerprint: RepoFingerprint,
   workflowConfig: WorkflowConfig,
+  qa?: Record<string, string>,
 ): string {
   const {
     repoName,
@@ -88,6 +89,11 @@ export function buildArchitectPrompt(
     parts.push(`Conventions: ${convStr}`)
   }
 
+  if (qa && Object.keys(qa).length > 0) {
+    const prefLines = Object.entries(qa).map(([k, v]) => `- ${k}: ${v}`)
+    parts.push(`User preferences:\n${prefLines.join('\n')}`)
+  }
+
   const workflowParts: string[] = [
     `autoDocs: ${workflowConfig.autoDocs}`,
     `autoCommit: ${workflowConfig.autoCommit}`,
@@ -108,9 +114,10 @@ export async function generateArchitectSkill(
   fingerprint: RepoFingerprint,
   workflowConfig: WorkflowConfig,
   logger?: VerboseLogger,
+  qa?: Record<string, string>,
 ): Promise<AISkill> {
   const cliCommand = await detectAICLI()
-  const prompt = buildArchitectPrompt(fingerprint, workflowConfig)
+  const prompt = buildArchitectPrompt(fingerprint, workflowConfig, qa)
   const raw = await invokeAICLI(cliCommand, prompt, 120_000, logger)
   return AISkill.parse(JSON.parse(stripJsonFences(raw)))
 }

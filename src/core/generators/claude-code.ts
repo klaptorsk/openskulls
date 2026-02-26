@@ -80,6 +80,7 @@ interface TemplateContext {
   packageSections: Array<{ id: string; content: string }>
   isConventionalCommits: boolean
   workflowRules: string
+  userAnswerEntries: Array<{ key: string; value: string }>
 }
 
 // ─── Generator ────────────────────────────────────────────────────────────────
@@ -102,6 +103,10 @@ export class ClaudeCodeGenerator extends BaseGenerator {
 
     const conventionalCommits = isConventionalCommits(fingerprint)
 
+    const userAnswerEntries = input.userAnswers
+      ? Object.entries(input.userAnswers).map(([key, value]) => ({ key, value }))
+      : []
+
     const ctx: TemplateContext = {
       repoName: fingerprint.repoName,
       description: fingerprint.description,
@@ -123,6 +128,7 @@ export class ClaudeCodeGenerator extends BaseGenerator {
       packageSections,
       isConventionalCommits: conventionalCommits,
       workflowRules: input.workflowConfig ? buildWorkflowRuleLines(input.workflowConfig).join('\n') : '',
+      userAnswerEntries,
     }
 
     files.push(repoFile('CLAUDE.md', COMPILED_TEMPLATE(ctx), 'merge_sections'))
