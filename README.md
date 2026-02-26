@@ -237,13 +237,14 @@ openskulls init --yes           # skip confirmation prompts
 1. **Analyse repo** — scans file tree, reads config files, invokes `claude -p` for AI analysis
 2. **Generate project skills** — second AI call produces repo-specific slash commands (non-fatal)
 3. **Show detected signals** — languages, frameworks, testing, linting in a table
-4. **Workflow setup** — two questions to configure how Claude works in this repo (skipped with `--yes`)
-5. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
-6. **Show generation plan** — lists every file that will be created or updated
-7. **Confirm** — nothing is written until you approve (skipped with `--yes`)
-8. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
-9. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
-10. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
+4. **Workflow setup** — questions to configure how Claude works in this repo (skipped with `--yes`)
+5. **Generate architect skill** — third AI call generates a domain-expert architect agent (if enabled)
+6. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
+7. **Show generation plan** — lists every file that will be created or updated
+8. **Confirm** — nothing is written until you approve (skipped with `--yes`)
+9. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
+10. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
+11. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
 
 **Workflow questions** (step 4):
 
@@ -257,9 +258,37 @@ Auto-commit — when a task is complete:
   1  Ask me first  ← default
   2  Commit automatically
   3  Never — I'll commit manually
+
+Architect agent — generate a domain expert for this project:
+  1  Yes, include an architect agent  ← default
+  2  No, skip
+
+  (If yes) Primary domain or focus: [leave blank to auto-detect]
+
+  When should the architect review new features:
+  1  Ask me first  ← default
+  2  Always (add to workflow rules automatically)
+  3  Only when I invoke /architect-review
+
+Skill generation:
+  1  Single AI call  ← default
+  2  Parallel subagents (faster, uses more AI calls)
 ```
 
 Answers are saved to `.openskulls/config.toml` and generate a `workflow_rules` section in `CLAUDE.md` that instructs Claude on your preferences.
+
+### Architect agent
+
+When enabled, `openskulls init` (and `openskulls sync`) runs a third AI call to generate a `/architect-review` slash command tailored to your codebase. The agent acts as a domain-expert reviewer, producing:
+
+- **Architectural Principles** — non-negotiable rules specific to your stack
+- **Review Checklist** — 6–10 items to verify on every feature or change
+- **Anti-Patterns** — stack-specific patterns to flag in code review
+- **Common Patterns** — canonical patterns referencing real paths in your repo
+
+The prompt template lives at `templates/prompts/architect.md.hbs` and can be edited directly to tune output without touching TypeScript.
+
+When `architect_review = "always"` is set in config, the generated skill includes a Workflow section that instructs Claude to run `/architect-review` as a required step after every feature addition.
 
 ---
 
@@ -274,6 +303,8 @@ openskulls sync --yes           # apply without confirmation
 ```
 
 Sync detects drift by comparing the current repo's `contentHash` against the stored baseline. If the hash changed, it runs the full analysis → generate pipeline and shows exactly which sections would be updated before writing anything.
+
+Workflow config is read from `.openskulls/config.toml` — if the architect agent was enabled during `init`, sync regenerates the `/architect-review` skill automatically.
 
 **Hook mode** (called automatically by the post-commit hook):
 

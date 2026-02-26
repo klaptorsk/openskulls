@@ -15,7 +15,7 @@
 | # | Task | Status |
 |---|---|---|
 | I-1 | Let the underlying AI text prompt output be visible by going in verbose by clicking ctrl-o similar to claude, we should be able to see it | ✅ Done |
-| R-1 | Generator refactor — extract shared helpers (`STYLE_LABELS`, `isConventionalCommits()`, `buildWorkflowRules()`) from both generators into `base.ts` or a new `shared.ts` | ⬜ Pending |
+| R-1 | Generator refactor — extract shared helpers (`STYLE_LABELS`, `isConventionalCommits()`, `buildWorkflowRules()`) from both generators into `base.ts` or a new `shared.ts` | ✅ Done |
 | R-2 | Generator registry — add `src/core/generators/registry.ts` with `getBuiltinGenerators()`, handling always-on vs detection-based generators | ⬜ Pending |
 | R-3 | Wire registry into CLI — replace hardcoded generator instantiation in `init.ts` and `sync.ts` (3 call sites) with registry lookup | ⬜ Pending |
 | 6 | Interviewer — structured init flow, save answers to config.toml | ⬜ Pending |
@@ -25,6 +25,7 @@
 | 10 | Decide: do we write anything into `.openskulls/` in the destination project? | ⬜ Pending |
 | 11 | UI polish — align style with https://github.com/openclaw/openclaw | ⬜ Pending |
 | 12 | `openskulls init` should offer to create a `TASKS.md` task tracker in the destination project with relevant continous update as we code along| ⬜ Pending |
+| 13 | Strenghten the promt for generating skills, also see if there is any exisisting skills from this or another source - ask for repo | ⬜ Pending |
 
 ---
 

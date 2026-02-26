@@ -26,10 +26,11 @@ import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerpri
 import { loadFingerprint, saveFingerprint } from '../../core/fingerprint/cache.js'
 import { hasDrifted } from '../../core/fingerprint/types.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
+import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
 import { CopilotGenerator } from '../../core/generators/copilot.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
-import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig, loadWorkflowConfig } from '../../core/config/types.js'
 import {
   divider, fatal, fileList, heading, log, spinner, verboseBlock,
 } from '../ui/console.js'
@@ -89,12 +90,14 @@ async function interactiveMode(
 ): Promise<void> {
   const repoRoot = resolve(path)
 
-  // ── Step 1: Load baseline ────────────────────────────────────────────────
+  // ── Step 1: Load baseline + workflow config ──────────────────────────────
 
   const baseline = await loadFingerprint(repoRoot)
   if (!baseline) {
     fatal('No fingerprint found — run `openskulls init` first.')
   }
+
+  const workflowConfig = await loadWorkflowConfig(repoRoot)
 
   // ── Step 2: Analyse ──────────────────────────────────────────────────────
 
@@ -151,6 +154,29 @@ async function interactiveMode(
     verboseBlock('Skills response', skillsCapture.response)
   }
 
+  // ── Step 3c: Architect skill (if enabled) ────────────────────────────────
+
+  if (workflowConfig.architectEnabled) {
+    const archSpin = spinner('Regenerating architect skill…').start()
+    const archCapture = { prompt: '', response: '' }
+    try {
+      const archLogger: VerboseLogger = {
+        onPrompt:   (p) => { archCapture.prompt = p },
+        onResponse: (r) => { archCapture.response = r },
+      }
+      const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger)
+      aiSkills = [architectSkill, ...aiSkills]
+      archSpin.succeed('Regenerated architect skill')
+    } catch (err) {
+      archSpin.warn('Could not regenerate architect skill — skipping')
+      log.info(err instanceof Error ? err.message : String(err))
+    }
+    if (options.verbose) {
+      verboseBlock('Architect prompt', archCapture.prompt)
+      verboseBlock('Architect response', archCapture.response)
+    }
+  }
+
   // ── Step 4: Generate files ───────────────────────────────────────────────
 
   const projectConfig = defaultProjectConfig()
@@ -162,6 +188,7 @@ async function interactiveMode(
     projectConfig,
     globalConfig,
     aiSkills,
+    workflowConfig,
   }
 
   const generatedFiles: GeneratedFile[] = [
@@ -237,6 +264,8 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       process.exit(0)
     }
 
+    const workflowConfig = await loadWorkflowConfig(repoRoot)
+
     // Analyse
     const collector = new AIFingerprintCollector()
     const fingerprint = await collector.collect(repoRoot)
@@ -254,10 +283,20 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       // Skip silently in hook mode
     }
 
+    // Architect skill (non-fatal)
+    if (workflowConfig.architectEnabled) {
+      try {
+        const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig)
+        aiSkills = [architectSkill, ...aiSkills]
+      } catch {
+        // Skip silently in hook mode
+      }
+    }
+
     // Generate + write silently
     const projectConfig = defaultProjectConfig()
     const globalConfig  = defaultGlobalConfig()
-    const generatorInput = { fingerprint, installedPackages: [], projectConfig, globalConfig, aiSkills }
+    const generatorInput = { fingerprint, installedPackages: [], projectConfig, globalConfig, aiSkills, workflowConfig }
     const generatedFiles: GeneratedFile[] = [
       ...new ClaudeCodeGenerator().generate(generatorInput),
     ]

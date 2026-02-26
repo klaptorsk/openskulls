@@ -21,6 +21,7 @@ import type { Command } from 'commander'
 import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
+import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
 import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
 import { CopilotGenerator } from '../../core/generators/copilot.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
@@ -163,6 +164,29 @@ export function registerInit(program: Command): void {
 
       const workflowConfig = await runInterviewer({ yes: options.yes })
 
+      // ── Step 2c: Architect skill (if enabled) ────────────────────────────
+
+      if (workflowConfig.architectEnabled) {
+        const archSpin = spinner('Generating architect skill…').start()
+        const archCapture = { prompt: '', response: '' }
+        try {
+          const archLogger: VerboseLogger = {
+            onPrompt:   (p) => { archCapture.prompt = p },
+            onResponse: (r) => { archCapture.response = r },
+          }
+          const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger)
+          aiSkills = [architectSkill, ...aiSkills]
+          archSpin.succeed('Generated architect skill')
+        } catch (err) {
+          archSpin.warn('Could not generate architect skill — skipping')
+          log.info(err instanceof Error ? err.message : String(err))
+        }
+        if (options.verbose) {
+          verboseBlock('Architect prompt', archCapture.prompt)
+          verboseBlock('Architect response', archCapture.response)
+        }
+      }
+
       // ── Step 3: Generate files ───────────────────────────────────────────
 
       const projectConfig = defaultProjectConfig()
@@ -279,8 +303,12 @@ async function saveConfig(
       '.venv', '__pycache__', '.next', '.nuxt', 'coverage',
     ],
     workflow: {
-      auto_docs: workflowConfig.autoDocs,
-      auto_commit: workflowConfig.autoCommit,
+      auto_docs:         workflowConfig.autoDocs,
+      auto_commit:       workflowConfig.autoCommit,
+      architect_enabled: workflowConfig.architectEnabled,
+      architect_domain:  workflowConfig.architectDomain,
+      architect_review:  workflowConfig.architectReview,
+      use_subagents:     workflowConfig.useSubagents,
     },
   }
   await mkdir(dirname(configPath), { recursive: true })

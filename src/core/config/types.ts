@@ -5,7 +5,10 @@
  * GlobalConfig   — ~/.openskulls/config.json        (personal, never committed)
  */
 
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { z } from 'zod'
+import { parse as tomlParse } from 'smol-toml'
 import { PackageDependency } from '../packages/types.js'
 
 // ─── ProjectConfig ────────────────────────────────────────────────────────────
@@ -39,8 +42,12 @@ export const SyncConfig = z.object({
 export type SyncConfig = z.infer<typeof SyncConfig>
 
 export const WorkflowConfig = z.object({
-  autoDocs:   z.enum(['always', 'ask', 'never']).default('ask'),
-  autoCommit: z.enum(['always', 'ask', 'never']).default('ask'),
+  autoDocs:         z.enum(['always', 'ask', 'never']).default('ask'),
+  autoCommit:       z.enum(['always', 'ask', 'never']).default('ask'),
+  architectEnabled: z.boolean().default(false),
+  architectDomain:  z.string().default(''),
+  architectReview:  z.enum(['always', 'ask', 'never']).default('ask'),
+  useSubagents:     z.boolean().default(false),
 })
 export type WorkflowConfig = z.infer<typeof WorkflowConfig>
 
@@ -111,4 +118,28 @@ export function defaultProjectConfig(): ProjectConfig {
 
 export function defaultGlobalConfig(): GlobalConfig {
   return GlobalConfig.parse({})
+}
+
+/**
+ * Read [repo]/.openskulls/config.toml and extract the [workflow] section.
+ * Returns defaults if the file is missing or malformed.
+ */
+export async function loadWorkflowConfig(repoRoot: string): Promise<WorkflowConfig> {
+  const configPath = join(repoRoot, '.openskulls', 'config.toml')
+  try {
+    const raw = await readFile(configPath, 'utf-8')
+    const parsed = tomlParse(raw) as Record<string, unknown>
+    const wf = parsed['workflow'] as Record<string, unknown> | undefined
+    if (!wf) return WorkflowConfig.parse({})
+    return WorkflowConfig.parse({
+      autoDocs:         wf['auto_docs'],
+      autoCommit:       wf['auto_commit'],
+      architectEnabled: wf['architect_enabled'],
+      architectDomain:  wf['architect_domain'],
+      architectReview:  wf['architect_review'],
+      useSubagents:     wf['use_subagents'],
+    })
+  } catch {
+    return WorkflowConfig.parse({})
+  }
 }
