@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   type RepoFingerprint,
-  allRuntimeDeps,
   createFingerprint,
-  frameworksByCategory,
   hasDrifted,
   parseFingerprint,
-  primaryLangSignal,
 } from '../../src/core/fingerprint/types.js'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -70,60 +67,3 @@ describe('hasDrifted', () => {
   })
 })
 
-// ─── primaryLangSignal ────────────────────────────────────────────────────────
-
-describe('primaryLangSignal', () => {
-  it('returns the primary language signal', () => {
-    const fp = minimalFingerprint({
-      languages: [
-        { name: 'TypeScript', confidence: 'high', percentage: 90, primary: true, evidence: [] },
-        { name: 'CSS', confidence: 'high', percentage: 10, primary: false, evidence: [] },
-      ],
-    })
-    expect(primaryLangSignal(fp)?.name).toBe('TypeScript')
-  })
-
-  it('returns undefined when no languages present', () => {
-    const fp = minimalFingerprint({ languages: [] })
-    expect(primaryLangSignal(fp)).toBeUndefined()
-  })
-})
-
-// ─── frameworksByCategory ─────────────────────────────────────────────────────
-
-describe('frameworksByCategory', () => {
-  it('filters frameworks by category', () => {
-    const fp = minimalFingerprint({
-      frameworks: [
-        { name: 'Next.js', confidence: 'high', category: 'fullstack', evidence: [] },
-        { name: 'pytest', confidence: 'high', category: 'testing', evidence: [] },
-      ],
-    })
-    const fullstack = frameworksByCategory(fp, 'fullstack')
-    expect(fullstack).toHaveLength(1)
-    expect(fullstack[0]?.name).toBe('Next.js')
-
-    expect(frameworksByCategory(fp, 'backend')).toHaveLength(0)
-  })
-})
-
-// ─── allRuntimeDeps ───────────────────────────────────────────────────────────
-
-describe('allRuntimeDeps', () => {
-  it('merges runtime deps from all dependency maps', () => {
-    const fp = minimalFingerprint({
-      dependencies: [
-        { runtime: { react: '^18.0.0', next: '14.0.0' }, dev: {}, peer: {}, sourceFile: 'package.json' },
-        { runtime: { pydantic: '^2.0' }, dev: {}, peer: {}, sourceFile: 'pyproject.toml' },
-      ],
-    })
-    const deps = allRuntimeDeps(fp)
-    expect(deps['react']).toBe('^18.0.0')
-    expect(deps['pydantic']).toBe('^2.0')
-  })
-
-  it('returns empty object when no dependencies', () => {
-    const fp = minimalFingerprint({ dependencies: [] })
-    expect(allRuntimeDeps(fp)).toEqual({})
-  })
-})

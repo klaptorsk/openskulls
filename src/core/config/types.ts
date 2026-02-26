@@ -115,14 +115,6 @@ export type GlobalConfig = z.infer<typeof GlobalConfig>
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export function enabledToolNames(config: ProjectConfig): string[] {
-  return config.targets.filter((t) => t.enabled).map((t) => t.name)
-}
-
-export function hasTool(config: ProjectConfig, toolId: string): boolean {
-  return config.targets.some((t) => t.name === toolId && t.enabled)
-}
-
 export function defaultProjectConfig(): ProjectConfig {
   return ProjectConfig.parse({})
 }

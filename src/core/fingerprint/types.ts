@@ -194,17 +194,3 @@ export function hasDrifted(current: RepoFingerprint, baseline: RepoFingerprint):
   return current.contentHash !== baseline.contentHash
 }
 
-export function primaryLangSignal(fp: RepoFingerprint): LanguageSignal | undefined {
-  return fp.languages.find((l) => l.primary)
-}
-
-export function frameworksByCategory(fp: RepoFingerprint, category: string): FrameworkSignal[] {
-  return fp.frameworks.filter((f) => f.category === category)
-}
-
-export function allRuntimeDeps(fp: RepoFingerprint): Record<string, string> {
-  return fp.dependencies.reduce<Record<string, string>>(
-    (acc, d) => ({ ...acc, ...d.runtime }),
-    {},
-  )
-}

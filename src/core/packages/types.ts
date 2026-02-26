@@ -113,24 +113,3 @@ export function skillsForTool(pkg: SkullPackage, toolId: string): Skill[] {
   )
 }
 
-export function rulesForTool(pkg: SkullPackage, toolId: string): Rule[] {
-  return pkg.rules.filter(
-    (r) => r.toolCompatibility.length === 0 || r.toolCompatibility.includes(toolId),
-  )
-}
-
-export function matchesStack(
-  pkg: SkullPackage,
-  frameworks: string[],
-  languages: string[],
-): boolean {
-  const { appliesWhen } = pkg
-  if (appliesWhen.frameworks.length === 0 && appliesWhen.languages.length === 0) return true
-  const fwMatch =
-    appliesWhen.frameworks.length === 0 ||
-    appliesWhen.frameworks.some((f) => frameworks.includes(f))
-  const langMatch =
-    appliesWhen.languages.length === 0 ||
-    appliesWhen.languages.some((l) => languages.includes(l))
-  return fwMatch && langMatch
-}
