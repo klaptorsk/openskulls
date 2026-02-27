@@ -21,6 +21,7 @@ Primary language: **TypeScript**.
 - **chalk** 5.3.0 (utility)
 - **ora** 8.1.0 (utility)
 - **smol-toml** 1.3.1 (utility)
+- **vitest** 2.0.0 (testing)
 
 <!-- /openskulls:section:tech_stack -->
 
@@ -33,14 +34,14 @@ Primary language: **TypeScript**.
 **Entry points**:
 - `src/index.ts`
 **Module structure**:
-- `src/cli/commands/`
-- `src/core/fingerprint/`
-- `src/core/generators/`
-- `src/core/packages/`
-- `src/core/config/`
-- `src/cli/ui/`
-- `templates/`
-- `tests/`
+- `src/cli/commands//`
+- `src/core/fingerprint//`
+- `src/core/generators//`
+- `src/core/packages//`
+- `src/core/config//`
+- `src/cli/ui//`
+- `templates//`
+- `tests//`
 
 <!-- /openskulls:section:architecture -->
 

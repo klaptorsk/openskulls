@@ -5,58 +5,59 @@ description: >
   Triggers: .hbs file, Handlebars template, CLAUDE.md template, section tags, merge_sections, template helper.
 ---
 
-# Add or Modify a Handlebars Template
+# Add or Edit a Handlebars Template
 
-Reference for working with Handlebars templates that control generated file content in openskulls.
+Reference for authoring Handlebars templates that generators render into `GeneratedFile` content.
 
 ## Core Rules
 
-- All templates live in `templates/` — subdirectory mirrors the generator name (e.g. `templates/claude-code/`)
-- Section tags use the format `<!-- openskulls:section:<name> -->` ... `<!-- /openskulls:section:<name> -->` for mergeable regions
-- Only sections inside these tags are preserved during `openskulls sync` — content outside is regenerated
-- Template variables come from `RepoFingerprint` — do not introduce ad-hoc data shapes
-- Use `{{#if field}}` guards for optional fingerprint fields so templates degrade gracefully when fields are absent
-- Do not put logic in templates — use Handlebars helpers registered in the generator for any transformation
-- Template filenames must end in `.hbs`
-
-## Key Files
-
-| File | Purpose |
-|---|---|
-| `templates/claude-code/CLAUDE.md.hbs` | Primary CLAUDE.md template — reference implementation |
-| `src/core/generators/claude-code.ts` | Loads and renders `CLAUDE.md.hbs`, registers helpers |
-| `src/core/generators/merge.ts` | `mergeSections()` — parses section tags for merge logic |
+- Templates live in `templates/` — subdirectory mirrors the generator name (e.g. `templates/claude-code/`)
+- Prompt templates live in `templates/prompts/`
+- Section tags use the form `<!-- openskulls:section:name -->` … `<!-- /openskulls:section:name -->` for `mergeSections()` to work
+- The merge strategy `merge_sections` preserves user edits inside tagged sections across syncs — never remove tags from an existing template
+- Pass only the fields you need from `RepoFingerprint` as template context — do not pass the whole object blindly
+- Register custom Handlebars helpers in the generator file before calling `Handlebars.compile()`
+- Use `{{{tripleStash}}}` for pre-rendered HTML/markdown that must not be escaped
 
 ## Pattern
 
 ```handlebars
-{{! templates/my-output/file.md.hbs }}
-# {{project.name}}
-
+<!-- templates/claude-code/CLAUDE.md.hbs -->
 <!-- openskulls:section:overview -->
-## Overview
-{{project.description}}
+## Project Overview
+
+{{projectName}} — {{description}}
+
 <!-- /openskulls:section:overview -->
 
-{{#if tech.frameworks}}
-## Frameworks
-{{#each tech.frameworks}}
-- **{{this.name}}** {{this.version}}
+<!-- openskulls:section:tech_stack -->
+## Tech Stack
+
+{{#each languages}}
+- **{{name}}** {{version}}
 {{/each}}
-{{/if}}
+
+<!-- /openskulls:section:tech_stack -->
+```
+
+```typescript
+// In generator — compile and render
+const tpl = Handlebars.compile(templateSource)
+const rendered = tpl({ projectName, description, languages })
 ```
 
 ## Anti-Patterns
 
-- Do not hardcode project-specific values in templates — all dynamic content must come from `RepoFingerprint`
-- Do not nest section tags — `mergeSections()` does not support nested sections
-- Do not add Handlebars helpers inside the `.hbs` file — register them in the generator's TypeScript file
+- Do not remove `<!-- openskulls:section:* -->` tags from existing templates — breaks user merge
+- Do not use `{{expression}}` for markdown content that contains `>`, `<` — use `{{{tripleStash}}}`
+- Do not put logic-heavy conditionals in templates — precompute in the generator and pass booleans
+- Do not hardcode file paths inside templates — receive them as template context
 
 ## Checklist
 
-- [ ] Template file created in correct `templates/<generator>/` subdirectory
-- [ ] Optional fields guarded with `{{#if}}`
-- [ ] Section tags added for any user-editable regions
-- [ ] Generator updated to load and render the new template
-- [ ] Output visually reviewed with a real fingerprint
+- [ ] Template file placed in correct `templates/` subdirectory
+- [ ] Section tags added for every mergeable block
+- [ ] Template context type defined and passed correctly from generator
+- [ ] Custom helpers registered before `Handlebars.compile()`
+- [ ] Generator unit test renders the template and asserts key strings
 - [ ] `npm test` passes

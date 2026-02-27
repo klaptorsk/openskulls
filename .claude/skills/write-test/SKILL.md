@@ -5,65 +5,61 @@ description: >
   Triggers: vitest, test file, describe, it, expect, makeContext, temp dir, test helper, unit test, integration test.
 ---
 
-# Write a Vitest Test
+# Write a Test
 
-Reference for writing tests that follow openskulls vitest conventions.
+Reference for authoring tests that follow openskulls vitest conventions.
 
 ## Core Rules
 
-- Test files live in `tests/` and match `tests/**/*.test.ts`
-- Use `makeContext(files)` from `tests/helpers/index.ts` for any test needing a real filesystem
-- Always call `cleanup()` in `afterEach` — `makeContext` creates real temp dirs
-- Pure functions (prompts, schemas, merge logic) need no mocking — test them directly with inputs and assert outputs
-- AI CLI invocations (`invokeAICLI`) must be mocked — do not make real subprocess calls in tests
-- Use `vi.mock` for module-level mocks; `vi.spyOn` for method-level
-- Import paths must use `.js` extension (NodeNext ESM)
-- TypeScript strict mode applies to test files
-
-## Key Files
-
-| File | Purpose |
-|---|---|
-| `tests/helpers/index.ts` | `makeContext(files)` — creates temp dir, returns `{ctx, dir, cleanup}` |
-| `tests/fingerprint/` | Fingerprint schema + collector tests — reference examples |
-| `tests/generators/` | Generator output tests |
-| `vitest.config.ts` | Vitest configuration |
+- All tests live under `tests/` matching `tests/**/*.test.ts`
+- Use `makeContext(files)` from `tests/helpers/index.ts` for any test that needs real files on disk
+- Always call `cleanup()` in `afterEach` — `makeContext` creates real temp dirs that must be removed
+- Pure functions (prompt builders, Zod schemas, `stripJsonFences`, `mergeSections`) are tested directly — no temp dirs needed
+- Never mock the filesystem — write real files via `makeContext`
+- Do not mock `invokeAICLI` in unit tests — test the pure functions around it instead
+- Use `vi.spyOn` only for time-sensitive or external-network concerns
+- Test file mirrors source path: `src/core/generators/merge.ts` → `tests/generators/merge.test.ts`
 
 ## Pattern
 
 ```typescript
-// tests/my-module/my-module.test.ts
 import { describe, it, expect, afterEach } from 'vitest'
 import { makeContext } from '../helpers/index.js'
-import { myFunction } from '../../src/core/my-module/my-function.js'
+import { mergeSections } from '../../src/core/generators/merge.js'
 
-describe('myFunction', () => {
+describe('mergeSections', () => {
+  it('preserves user edits inside tagged sections', () => {
+    const existing = '<!-- openskulls:section:foo -->\nuser edit\n<!-- /openskulls:section:foo -->'
+    const next = '<!-- openskulls:section:foo -->\nnew content\n<!-- /openskulls:section:foo -->'
+    const result = mergeSections(existing, next)
+    expect(result).toContain('user edit')
+  })
+})
+
+// For filesystem tests:
+describe('MyGenerator', () => {
   let cleanup: () => Promise<void>
-
   afterEach(async () => { await cleanup?.() })
 
-  it('returns expected output for valid input', async () => {
-    const { ctx, dir, cleanup: c } = await makeContext({
-      'src/index.ts': 'export const x = 1'
-    })
-    cleanup = c
-    const result = myFunction(ctx)
-    expect(result).toEqual({ field: 'value' })
+  it('emits expected files', async () => {
+    const ctx = await makeContext({ 'package.json': '{"name":"test"}' })
+    cleanup = ctx.cleanup
+    // use ctx.dir for real path
   })
 })
 ```
 
 ## Anti-Patterns
 
-- Do not import with bare specifiers like `'../../src/foo'` — always add `.js` extension
-- Do not skip `cleanup()` — temp dirs accumulate and pollute `/tmp`
-- Do not make real AI CLI calls in tests — mock `invokeAICLI` from `ai-collector.ts`
-- Do not test implementation details — test observable outputs (returned values, written files)
+- Do not skip `cleanup()` — temp dirs accumulate and cause flaky tests
+- Do not import from `../../src/...` without the `.js` extension — NodeNext ESM requires explicit extensions
+- Do not write tests that depend on PATH or installed CLIs — test pure functions instead
+- Do not use `test.only` or `describe.only` in committed code
 
 ## Checklist
 
-- [ ] Test file in `tests/**/*.test.ts`
-- [ ] `cleanup()` called in `afterEach` if `makeContext` is used
+- [ ] Test file at `tests/<module>.test.ts` mirroring source path
+- [ ] `makeContext` used for any filesystem interaction, `cleanup` called in `afterEach`
+- [ ] Pure functions tested without mocks
 - [ ] All imports use `.js` extension
-- [ ] AI/subprocess calls mocked with `vi.mock` or `vi.spyOn`
-- [ ] `npm test` passes with no new failures
+- [ ] `npm test` passes with no skipped tests

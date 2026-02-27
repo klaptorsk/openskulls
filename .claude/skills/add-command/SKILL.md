@@ -7,62 +7,59 @@ description: >
 
 # Add a CLI Command
 
-Reference for wiring a new command into the openskulls CLI following Commander conventions.
+Reference for wiring a new top-level command into the openskulls CLI using commander.
 
 ## Core Rules
 
-- Command logic lives in `src/cli/commands/<name>.ts`; register the command in `src/cli/index.ts`
-- Every command must be registered with `.command()`, `.description()`, and an `.action()` handler
-- All user-facing output goes through `src/cli/ui/console.ts` — never use `console.log` directly
-- Use `ora` spinners for async operations via `spinner()` from `src/cli/ui/console.ts`
-- File writes are handled by `writeGeneratedFile()` from `src/cli/commands/shared.ts`
-- Fatal errors must call `fatal()` from `src/cli/ui/console.ts` and exit non-zero
-- Commands that produce files must support a dry-run path without I/O side effects
+- Command implementation goes in `src/cli/commands/<name>.ts`
+- Register in `src/cli/index.ts` — one `.command()` block per command
+- Use `log.*`, `panel()`, `spinner()`, `fatal()` from `src/cli/ui/console.ts` — never use `console.log` directly
+- All user-visible errors must call `fatal(msg)` which exits with code 1
+- Heavy logic belongs in `src/core/` — the command file is orchestration only
+- Use `ora` via the `spinner()` wrapper, not directly
+- Parse and validate config with `ProjectConfig` / `GlobalConfig` Zod schemas from `src/core/config/types.ts`
 
 ## Pattern
 
 ```typescript
 // src/cli/commands/mycommand.ts
-import { Command } from 'commander'
 import { log, spinner, fatal } from '../ui/console.js'
 
-export function registerMyCommand(program: Command): void {
-  program
-    .command('mycommand')
-    .description('Short description')
-    .option('--dry-run', 'Preview without writing')
-    .action(async (opts) => {
-      const spin = spinner('Doing thing...')
-      try {
-        spin.start()
-        // logic here
-        spin.succeed('Done')
-      } catch (err) {
-        spin.fail('Failed')
-        fatal(err instanceof Error ? err.message : String(err))
-      }
-    })
+export async function runMyCommand(opts: { flag: boolean }): Promise<void> {
+  const spin = spinner('Doing work...')
+  try {
+    spin.start()
+    // delegate to src/core/
+    spin.succeed('Done')
+  } catch (err) {
+    spin.fail('Failed')
+    fatal(err instanceof Error ? err.message : String(err))
+  }
 }
 ```
 
 ```typescript
-// src/cli/index.ts — add registration call
-import { registerMyCommand } from './commands/mycommand.js'
-registerMyCommand(program)
+// src/cli/index.ts — add inside program setup
+program
+  .command('mycommand')
+  .description('What it does')
+  .option('--flag', 'description')
+  .action(async (opts) => { await runMyCommand(opts) })
 ```
 
 ## Anti-Patterns
 
-- Do not put generator or analysis logic inside the command file — delegate to `src/core/`
-- Do not call `process.exit()` directly — use `fatal()` which handles logging and exit
-- Do not write files from generators — generators return `GeneratedFile[]`, write via `writeGeneratedFile()`
+- Do not import `process.exit` directly — use `fatal()`
+- Do not put fingerprint/generator/config logic inside the command file
+- Do not use `console.log` or `console.error` — always use `log.*` helpers
+- Do not catch errors silently — always surface them via `fatal()` or `spin.fail()`
 
 ## Checklist
 
-- [ ] Command file created in `src/cli/commands/<name>.ts`
-- [ ] Command registered in `src/cli/index.ts`
-- [ ] All output uses `log.*` / `spinner()` from `console.ts`
-- [ ] Errors handled with `fatal()`
-- [ ] Test added under `tests/`
+- [ ] Command file created at `src/cli/commands/<name>.ts`
+- [ ] Registered in `src/cli/index.ts` with `.command()` and `.action()`
+- [ ] Uses `log.*` / `spinner()` / `fatal()` from `src/cli/ui/console.ts`
+- [ ] Heavy logic delegated to `src/core/`
+- [ ] Test file created at `tests/<name>.test.ts`
 - [ ] `npm test` passes
-- [ ] README.md updated with new command
+- [ ] README.md updated with new command docs
