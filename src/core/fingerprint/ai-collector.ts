@@ -191,7 +191,7 @@ export class AIFingerprintCollector {
  */
 async function runVersion(command: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, ['--version'])
+    const child = spawn(command, ['--version'], { shell: process.platform === 'win32' })
     let out = ''
 
     child.stdout.on('data', (d: Buffer) => { out += d.toString() })
@@ -239,7 +239,7 @@ export async function invokeAICLI(
     // stdin style: `claude -p -`  — prompt written to child.stdin
     // arg style:   `codex -p "…"` — prompt passed as the -p argument
     const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
-    const child = spawn(adapter.command, args)
+    const child = spawn(adapter.command, args, { shell: process.platform === 'win32' })
     let out = ''
     let err = ''
 
