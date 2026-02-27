@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-02-27T09:37:39.813Z",
+  "generatedAt": "2026-02-27T09:45:57.048Z",
   "repoRoot": "/home/ehs/Git/openskulls",
   "repoName": "openskulls",
   "languages": [
@@ -12,8 +12,8 @@
       "primary": true,
       "evidence": [
         "tsconfig.json found",
-        "CLAUDE.md states 100% of source files are TypeScript",
-        "all src/ files have .ts extension"
+        "package.json devDependencies: typescript ^5.5.0",
+        "CLAUDE.md: TypeScript 5.5.0 (primary) — 100% of source files"
       ]
     }
   ],
@@ -24,7 +24,7 @@
       "confidence": "high",
       "category": "cli",
       "evidence": [
-        "package.json dependencies"
+        "package.json dependencies: commander ^12.1.0"
       ]
     },
     {
@@ -33,7 +33,7 @@
       "confidence": "high",
       "category": "utility",
       "evidence": [
-        "package.json dependencies"
+        "package.json dependencies: zod ^3.23.8"
       ]
     },
     {
@@ -42,8 +42,8 @@
       "confidence": "high",
       "category": "utility",
       "evidence": [
-        "package.json dependencies",
-        "templates/*.hbs files present"
+        "package.json dependencies: handlebars ^4.7.8",
+        "templates/ directory with .hbs files"
       ]
     },
     {
@@ -52,7 +52,7 @@
       "confidence": "high",
       "category": "utility",
       "evidence": [
-        "package.json dependencies"
+        "package.json dependencies: simple-git ^3.25.0"
       ]
     },
     {
@@ -61,7 +61,7 @@
       "confidence": "high",
       "category": "utility",
       "evidence": [
-        "package.json dependencies"
+        "package.json dependencies: chalk ^5.3.0"
       ]
     },
     {
@@ -70,7 +70,7 @@
       "confidence": "high",
       "category": "utility",
       "evidence": [
-        "package.json dependencies"
+        "package.json dependencies: ora ^8.1.0"
       ]
     },
     {
@@ -79,7 +79,7 @@
       "confidence": "high",
       "category": "utility",
       "evidence": [
-        "package.json dependencies"
+        "package.json dependencies: smol-toml ^1.3.1"
       ]
     },
     {
@@ -88,7 +88,7 @@
       "confidence": "high",
       "category": "testing",
       "evidence": [
-        "package.json devDependencies",
+        "package.json devDependencies: vitest ^2.0.0",
         "vitest.config.ts found"
       ]
     }
@@ -99,8 +99,8 @@
       "value": "NodeNext",
       "confidence": "high",
       "evidence": [
-        "tsconfig.json module: NodeNext",
-        "package.json type: module"
+        "tsconfig.json: module: NodeNext, moduleResolution: NodeNext",
+        "package.json: type: module"
       ]
     },
     {
@@ -108,8 +108,7 @@
       "value": "strict",
       "confidence": "high",
       "evidence": [
-        "tsconfig.json strict: true",
-        "noUncheckedIndexedAccess: true"
+        "tsconfig.json: strict: true, noUncheckedIndexedAccess: true"
       ]
     },
     {
@@ -117,7 +116,7 @@
       "value": "z.infer<typeof Schema>",
       "confidence": "high",
       "evidence": [
-        "CLAUDE.md conventions section"
+        "CLAUDE.md: Zod Types convention listed"
       ]
     },
     {
@@ -125,7 +124,7 @@
       "value": "GeneratedFile[] return only",
       "confidence": "high",
       "evidence": [
-        "CLAUDE.md conventions section"
+        "CLAUDE.md: Generators No Io convention listed"
       ]
     }
   ],
@@ -192,5 +191,5 @@
   ],
   "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves.",
   "primaryLanguage": "TypeScript",
-  "contentHash": "61e8e8f9c45c83d6c840afd62af0aa848036a41b9578b9a45b6fe0d515799a54"
+  "contentHash": "929216082e63bf61cdd02f45461bf4840aa193130b266560469430d69efb4694"
 }
