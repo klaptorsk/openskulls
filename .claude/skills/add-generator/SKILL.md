@@ -5,47 +5,65 @@ description: >
   Triggers: new generator, GeneratedFile, repoFile, personalFile, Handlebars template, generated output file.
 ---
 
-# Add a Generator
+# Add a New Generator
 
-Reference for implementing a new file generator that follows the no-I/O contract.
+Reference for implementing a new file generator following the no-I/O, GeneratedFile[] pattern.
 
 ## Core Rules
 
-- Generators MUST return `GeneratedFile[]` — never write files directly
-- Extend `BaseGenerator` from `src/core/generators/base.ts`
-- Use `repoFile(relativePath, content)` for files committed to the repo
-- Use `personalFile(relativePath, content)` for user-local files (gitignored)
-- Accept `RepoFingerprint` (from `src/core/fingerprint/types.ts`) as constructor or method input
-- Use `mergeSections()` from `src/core/generators/merge.ts` when emitting files with tagged sections
-- Register the generator in both `src/cli/commands/init.ts` and `src/cli/commands/sync.ts`
-- Shared formatting helpers go in `src/core/generators/shared.ts`
+- Generators extend `BaseGenerator` from `src/core/generators/base.ts`
+- Generator methods return `GeneratedFile[]` — NEVER write to disk
+- Use `repoFile(path, content)` for files that should be committed to the repo
+- Use `personalFile(path, content)` for files that should be gitignored
+- Implement `generate(fingerprint: RepoFingerprint): GeneratedFile[]`
+- Handlebars templates live in `templates/<generator-name>/`
+- Load templates via `fs.readFileSync` at call time — do not cache at module level in tests
+- Shared rendering helpers belong in `src/core/generators/shared.ts`
 
 ## Key Files
 
 ```
-src/core/generators/base.ts       — GeneratedFile, BaseGenerator, repoFile(), personalFile()
+src/core/generators/base.ts        — BaseGenerator, GeneratedFile, repoFile(), personalFile()
 src/core/generators/claude-code.ts — ClaudeCodeGenerator (reference implementation)
-src/core/generators/merge.ts       — mergeSections() for tagged-section files
-src/core/generators/shared.ts      — STYLE_LABELS, isConventionalCommits(), buildWorkflowRuleLines()
-src/cli/commands/init.ts            — instantiates generators, calls generate(), writes files
-src/cli/commands/sync.ts            — same pattern for sync flow
+src/core/generators/copilot.ts    — CopilotGenerator (simpler reference)
+src/core/generators/shared.ts     — STYLE_LABELS, buildWorkflowRuleLines(), isConventionalCommits()
+templates/claude-code/             — Handlebars templates for ClaudeCodeGenerator
+```
+
+## Pattern
+
+```typescript
+// src/core/generators/myengine.ts
+import { BaseGenerator, GeneratedFile, repoFile } from './base.js'
+import type { RepoFingerprint } from '../fingerprint/types.js'
+import Handlebars from 'handlebars'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { join, dirname } from 'node:path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+export class MyEngineGenerator extends BaseGenerator {
+  generate(fingerprint: RepoFingerprint): GeneratedFile[] {
+    const tplPath = join(__dirname, '../../../templates/myengine/FILE.hbs')
+    const template = Handlebars.compile(readFileSync(tplPath, 'utf8'))
+    const content = template({ fingerprint })
+    return [repoFile('MY_ENGINE_FILE.md', content)]
+  }
+}
 ```
 
 ## Anti-Patterns
 
-- Do not call `fs.writeFile` or any I/O inside a generator — return `GeneratedFile[]` only
-- Do not hardcode repo paths — use `repoFile()` / `personalFile()` helpers
-- Do not duplicate template rendering logic — use Handlebars templates in `templates/`
-- Do not add generator-specific logic to `shared.ts` — keep it truly shared
+- Do not call `fs.writeFileSync` inside a generator — only the CLI layer writes
+- Do not throw from `generate()` for missing optional fields — use safe defaults
+- Do not hardcode strings that belong in a Handlebars template
 
 ## Checklist
 
-- [ ] Generator class created at `src/core/generators/<name>.ts` extending `BaseGenerator`
-- [ ] `generate()` returns `GeneratedFile[]` with no side effects
-- [ ] `repoFile()` / `personalFile()` used for all output files
-- [ ] Handlebars template added to `templates/` if needed
-- [ ] Generator instantiated in `src/cli/commands/init.ts`
-- [ ] Generator instantiated in `src/cli/commands/sync.ts`
-- [ ] Unit tests written in `tests/generators/<name>.test.ts`
+- [ ] Generator class created in `src/core/generators/<name>.ts`
+- [ ] Handlebars template added to `templates/<name>/`
+- [ ] Generator instantiated and called in `src/cli/commands/init.ts` and `sync.ts`
+- [ ] Unit test covers at least the happy-path output
 - [ ] `npm test` passes
 - [ ] README.md updated

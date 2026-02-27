@@ -5,52 +5,61 @@ description: >
   Triggers: claude -p, AIFingerprintCollector, invokeAICLI, stripJsonFences, Zod parse error, AI response, skills-builder, generateAISkills.
 ---
 
-# Debug the AI Pipeline
+# Debug the AI Fingerprint Pipeline
 
-Reference for diagnosing failures in the two-stage AI pipeline: fingerprint analysis and skills generation.
+Reference for diagnosing failures in the two-phase AI pipeline: fingerprint analysis and skills generation.
 
 ## Core Rules
 
-- The first AI call is `AIFingerprintCollector.collect()` in `src/core/fingerprint/ai-collector.ts` — invokes `claude -p` via stdin
-- The second AI call is `generateAISkills()` in `src/core/fingerprint/skills-builder.ts`
-- Both calls go through `invokeAICLI(prompt, cliPath)` — check this function first on subprocess errors
-- `stripJsonFences()` strips ` ```json ` fences before Zod parse — AI often wraps JSON in fences
-- Zod parse errors mean the AI returned a schema mismatch — inspect the raw response before the parse step
-- Both AI calls are non-fatal by design — failures return `null` / partial data, not thrown errors
-- `detectAICLIs()` checks PATH for `claude`, `cursor`, etc. — if no CLI found, AI calls are skipped entirely
+- `AIFingerprintCollector.collect()` is in `src/core/fingerprint/ai-collector.ts` — all AI invocation logic lives here
+- `invokeAICLI()` writes the prompt to `child.stdin` (not argv) to avoid ARG_MAX limits
+- `stripJsonFences()` removes ```json fences before Zod parse — check this first when seeing parse errors
+- Both AI calls are non-fatal: failures log a warning and return `null` / partial data
+- Skills generation is in `src/core/fingerprint/skills-builder.ts` — `generateAISkills()` is the entry point
+- The AI prompt templates are at `templates/prompts/analysis.md.hbs` and `templates/prompts/skills.md.hbs`
 
 ## Key Files
 
 ```
-src/core/fingerprint/ai-collector.ts   — AIFingerprintCollector, invokeAICLI(), detectAICLI(), stripJsonFences()
-src/core/fingerprint/prompt-builder.ts — buildAnalysisPrompt() — inspect prompt sent to AI
-src/core/fingerprint/skills-builder.ts — generateAISkills(), AISkillsResponse Zod schema
-src/core/fingerprint/skills-prompt.ts  — buildSkillsPrompt() — inspect skills prompt
-templates/prompts/analysis.md.hbs       — analysis prompt template
-templates/prompts/skills.md.hbs         — skills prompt template
+src/core/fingerprint/ai-collector.ts    — AIFingerprintCollector, invokeAICLI(), stripJsonFences()
+src/core/fingerprint/skills-builder.ts — generateAISkills(), AISkill + AISkillsResponse schemas
+src/core/fingerprint/prompt-builder.ts — buildAnalysisPrompt() — check prompt shape here
+src/core/fingerprint/skills-prompt.ts  — buildSkillsPrompt() — check skills prompt here
+templates/prompts/analysis.md.hbs      — rendered analysis prompt
+templates/prompts/skills.md.hbs        — rendered skills prompt
 ```
 
 ## Debugging Steps
 
-1. **Check CLI detection**: call `detectAICLIs()` manually — confirm `claude` is on PATH and executable
-2. **Inspect prompt**: call `buildAnalysisPrompt()` or `buildSkillsPrompt()` and print — verify it renders correctly
-3. **Test raw AI call**: run `echo "<prompt>" | claude -p -` in terminal — see raw AI output
-4. **Check JSON fences**: if Zod fails, log the raw string before `stripJsonFences()` — AI may be wrapping in unexpected fences
-5. **Schema mismatch**: compare raw JSON keys against `AIAnalysisResponseSchema` / `AISkillsResponse` in `types.ts`
-6. **Timeout**: `invokeAICLI` has no built-in timeout — large file trees can cause slow responses
+```typescript
+// 1. Isolate: run just the prompt builder
+const prompt = buildAnalysisPrompt(repoName, fileTree, configContents)
+console.log(prompt) // check the rendered prompt is valid
+
+// 2. Test invokeAICLI directly
+const raw = await invokeAICLI(prompt)
+console.log(raw) // is it returning JSON? fenced? error text?
+
+// 3. Test stripJsonFences
+const stripped = stripJsonFences(raw)
+console.log(stripped)
+
+// 4. Test Zod parse
+const parsed = AIAnalysisResponseSchema.safeParse(JSON.parse(stripped))
+if (!parsed.success) console.error(parsed.error.format())
+```
 
 ## Anti-Patterns
 
-- Do not swallow the raw AI response without logging it when debugging — always print before Zod parse
-- Do not assume `detectAICLI()` will find the CLI in CI — PATH may differ from local
-- Do not change Zod schemas to match bad AI output — fix the prompt instead
-- Do not add retries to `invokeAICLI` without a timeout guard
+- Do not make AI calls fatal — always catch and return null/partial so the CLI degrades gracefully
+- Do not add new required fields to `AIAnalysisResponseSchema` without `.optional()` — old model responses won't include them
+- Do not pass the prompt via argv — always use stdin to avoid shell argument length limits
 
 ## Checklist
 
-- [ ] `detectAICLIs()` returns expected CLI entries
-- [ ] Prompt renders without undefined/null values
-- [ ] Raw AI output logged before `stripJsonFences()`
-- [ ] `stripJsonFences()` leaves valid JSON
-- [ ] Zod parse succeeds against correct schema
-- [ ] `npm test` passes including AI pipeline unit tests
+- [ ] Prompt renders correctly (no missing Handlebars variables)
+- [ ] `claude` binary is on PATH and executable (`detectAICLI()` returns a path)
+- [ ] Raw AI response is valid JSON after `stripJsonFences()`
+- [ ] Zod schema matches the fields the model is actually returning
+- [ ] Test added to reproduce the specific parse/timeout failure
+- [ ] `npm test` passes

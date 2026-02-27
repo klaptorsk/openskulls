@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-02-27T09:45:57.048Z",
+  "generatedAt": "2026-02-27T15:38:22.751Z",
   "repoRoot": "/home/ehs/Git/openskulls",
   "repoName": "openskulls",
   "languages": [
@@ -12,8 +12,8 @@
       "primary": true,
       "evidence": [
         "tsconfig.json found",
-        "package.json devDependencies: typescript ^5.5.0",
-        "CLAUDE.md: TypeScript 5.5.0 (primary) — 100% of source files"
+        "package.json devDependencies typescript ^5.5.0",
+        "CLAUDE.md: TypeScript 5.5.0 primary, 100% of source files"
       ]
     }
   ],
@@ -42,8 +42,7 @@
       "confidence": "high",
       "category": "utility",
       "evidence": [
-        "package.json dependencies: handlebars ^4.7.8",
-        "templates/ directory with .hbs files"
+        "package.json dependencies: handlebars ^4.7.8"
       ]
     },
     {
@@ -83,6 +82,15 @@
       ]
     },
     {
+      "name": "@clack/prompts",
+      "version": "1.0.1",
+      "confidence": "high",
+      "category": "utility",
+      "evidence": [
+        "package.json dependencies: @clack/prompts ^1.0.1"
+      ]
+    },
+    {
       "name": "vitest",
       "version": "2.0.0",
       "confidence": "high",
@@ -99,8 +107,9 @@
       "value": "NodeNext",
       "confidence": "high",
       "evidence": [
-        "tsconfig.json: module: NodeNext, moduleResolution: NodeNext",
-        "package.json: type: module"
+        "tsconfig.json module: NodeNext",
+        "tsconfig.json moduleResolution: NodeNext",
+        "package.json type: module"
       ]
     },
     {
@@ -108,7 +117,8 @@
       "value": "strict",
       "confidence": "high",
       "evidence": [
-        "tsconfig.json: strict: true, noUncheckedIndexedAccess: true"
+        "tsconfig.json strict: true",
+        "noUncheckedIndexedAccess: true"
       ]
     },
     {
@@ -116,7 +126,7 @@
       "value": "z.infer<typeof Schema>",
       "confidence": "high",
       "evidence": [
-        "CLAUDE.md: Zod Types convention listed"
+        "CLAUDE.md conventions: Zod Types"
       ]
     },
     {
@@ -124,13 +134,14 @@
       "value": "GeneratedFile[] return only",
       "confidence": "high",
       "evidence": [
-        "CLAUDE.md: Generators No Io convention listed"
+        "CLAUDE.md conventions: Generators No Io"
       ]
     }
   ],
   "dependencies": [
     {
       "runtime": {
+        "@clack/prompts": "^1.0.1",
         "chalk": "^5.3.0",
         "commander": "^12.1.0",
         "handlebars": "^4.7.8",
@@ -189,7 +200,7 @@
       ]
     }
   ],
-  "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves.",
+  "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
   "primaryLanguage": "TypeScript",
-  "contentHash": "929216082e63bf61cdd02f45461bf4840aa193130b266560469430d69efb4694"
+  "contentHash": "b9992a6f378950737d74599895eb2ccf64f73d54ccd7adefdc3b5e1343b30dd1"
 }

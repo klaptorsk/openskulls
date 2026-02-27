@@ -5,59 +5,56 @@ description: >
   Triggers: .hbs file, Handlebars template, CLAUDE.md template, section tags, merge_sections, template helper.
 ---
 
-# Add or Edit a Handlebars Template
+# Create or Edit a Handlebars Template
 
-Reference for authoring Handlebars templates that generators render into `GeneratedFile` content.
+Reference for authoring and modifying the Handlebars templates that generators use to produce output files.
 
 ## Core Rules
 
-- Templates live in `templates/` — subdirectory mirrors the generator name (e.g. `templates/claude-code/`)
-- Prompt templates live in `templates/prompts/`
-- Section tags use the form `<!-- openskulls:section:name -->` … `<!-- /openskulls:section:name -->` for `mergeSections()` to work
-- The merge strategy `merge_sections` preserves user edits inside tagged sections across syncs — never remove tags from an existing template
-- Pass only the fields you need from `RepoFingerprint` as template context — do not pass the whole object blindly
-- Register custom Handlebars helpers in the generator file before calling `Handlebars.compile()`
-- Use `{{{tripleStash}}}` for pre-rendered HTML/markdown that must not be escaped
+- All templates live under `templates/` — never inline large template strings in TypeScript source
+- Templates that support section-merge must wrap each mergeable region with `<!-- openskulls:section:<name> -->` / `<!-- /openskulls:section:<name> -->` tags
+- The merge engine in `src/core/generators/merge.ts` preserves user content in tagged sections across syncs — any content NOT in a section tag is considered generator-owned and will be replaced
+- Handlebars helpers are registered in the generator file that loads the template — keep helpers pure and side-effect free
+- Use `{{#if field}}...{{/if}}` guards for optional fingerprint fields so templates render safely when fields are absent
+- Prompt templates (under `templates/prompts/`) must include a concrete JSON example matching the current Zod schema so the AI knows the exact output shape
+
+## Key Files
+
+```
+templates/claude-code/CLAUDE.md.hbs     — primary CLAUDE.md template (section-merge enabled)
+templates/prompts/analysis.md.hbs       — AI fingerprint analysis prompt
+templates/prompts/skills.md.hbs         — AI skills generation prompt
+templates/prompts/questionnaire.md.hbs  — AI questionnaire prompt
+templates/prompts/architect.md.hbs      — AI architect skill prompt
+src/core/generators/merge.ts            — mergeSections(), parseChunks(), extractSections()
+```
 
 ## Pattern
 
 ```handlebars
-<!-- templates/claude-code/CLAUDE.md.hbs -->
-<!-- openskulls:section:overview -->
-## Project Overview
+<!-- openskulls:section:my_section -->
+## My Section
 
-{{projectName}} — {{description}}
-
-<!-- /openskulls:section:overview -->
-
-<!-- openskulls:section:tech_stack -->
-## Tech Stack
-
-{{#each languages}}
-- **{{name}}** {{version}}
+{{#if fingerprint.myField}}
+- **{{fingerprint.myField}}**
+{{/if}}
+{{#each fingerprint.items}}
+- {{this.name}}: {{this.value}}
 {{/each}}
 
-<!-- /openskulls:section:tech_stack -->
-```
-
-```typescript
-// In generator — compile and render
-const tpl = Handlebars.compile(templateSource)
-const rendered = tpl({ projectName, description, languages })
+<!-- /openskulls:section:my_section -->
 ```
 
 ## Anti-Patterns
 
-- Do not remove `<!-- openskulls:section:* -->` tags from existing templates — breaks user merge
-- Do not use `{{expression}}` for markdown content that contains `>`, `<` — use `{{{tripleStash}}}`
-- Do not put logic-heavy conditionals in templates — precompute in the generator and pass booleans
-- Do not hardcode file paths inside templates — receive them as template context
+- Do not put business logic in templates — compute derived values in the generator and pass them as template variables
+- Do not omit section tags on regions users are expected to edit — they will be overwritten on next sync
+- Do not modify `templates/prompts/` without also updating the matching Zod schema and vice versa
 
 ## Checklist
 
-- [ ] Template file placed in correct `templates/` subdirectory
-- [ ] Section tags added for every mergeable block
-- [ ] Template context type defined and passed correctly from generator
-- [ ] Custom helpers registered before `Handlebars.compile()`
-- [ ] Generator unit test renders the template and asserts key strings
-- [ ] `npm test` passes
+- [ ] Template saved under `templates/<generator>/`
+- [ ] Mergeable user-editable sections wrapped with `<!-- openskulls:section:<name> -->` tags
+- [ ] All optional fields guarded with `{{#if}}`
+- [ ] Generator updated to load and compile the template
+- [ ] `npm test` passes (snapshot or content tests updated if needed)

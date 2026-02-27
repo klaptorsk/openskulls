@@ -5,43 +5,57 @@ description: >
   Triggers: new fingerprint field, RepoFingerprint schema, AIAnalysisResponse, Zod schema, fingerprint drift, contentHash.
 ---
 
-# Extend RepoFingerprint
+# Extend the RepoFingerprint Schema
 
-Reference for safely adding new fields to the fingerprint schema with runtime validation and drift detection.
+Reference for safely adding fields to the RepoFingerprint Zod schema without breaking existing fingerprint caches or content-hash stability.
 
 ## Core Rules
 
-- All schemas live in `src/core/fingerprint/types.ts` — `RepoFingerprintSchema`, `AIAnalysisResponseSchema`
-- Types are always `z.infer<typeof Schema>` — never write a manual interface that duplicates a schema
-- New fields added to `RepoFingerprintSchema` must also be reflected in `AIAnalysisResponseSchema` if they come from the AI call
-- `contentHash` excludes `repoRoot`, `generatedAt`, and `contentHash` itself — verify the exclusion list if adding identity fields
-- `hasDrifted()` in `types.ts` compares hashes — no logic changes needed for new data fields
-- Update `buildAnalysisPrompt()` in `src/core/fingerprint/prompt-builder.ts` if the AI needs to populate the new field
-- Saved fingerprints in `.openskulls/fingerprint.json` must remain forward-compatible — use `.optional()` for new fields
+- All schema changes go in `src/core/fingerprint/types.ts`
+- New fields MUST have a `.default()` or `.optional()` so old cached fingerprints still parse
+- Fields included in content-hash diffing are controlled inside `hasDrifted()` — only add a field to the drift check if it should invalidate the cache
+- If the AI should populate the new field, add it to the response schema `AIAnalysisResponse` in `src/core/fingerprint/ai-collector.ts` AND update `buildAnalysisPrompt()` in `src/core/fingerprint/prompt-builder.ts`
+- The AI prompt template lives at `templates/prompts/analysis.md.hbs` — keep the JSON example in sync with any new fields
+- After changing schemas, regenerate `contentHash` logic in `createFingerprint()` if needed
 
 ## Key Files
 
 ```
-src/core/fingerprint/types.ts          — RepoFingerprintSchema, AIAnalysisResponseSchema, createFingerprint(), hasDrifted()
-src/core/fingerprint/ai-collector.ts   — AIFingerprintCollector, Zod-validates AI response
-src/core/fingerprint/prompt-builder.ts — buildAnalysisPrompt() — update prompt to request new field
-src/core/fingerprint/cache.ts          — loadFingerprint(), saveFingerprint()
-templates/prompts/analysis.md.hbs      — AI analysis prompt template
+src/core/fingerprint/types.ts           — RepoFingerprintSchema, createFingerprint(), hasDrifted()
+src/core/fingerprint/ai-collector.ts   — AIAnalysisResponse Zod schema, invokeAICLI()
+src/core/fingerprint/prompt-builder.ts — buildAnalysisPrompt() — update JSON example here
+templates/prompts/analysis.md.hbs      — AI prompt template with expected JSON shape
+```
+
+## Pattern
+
+```typescript
+// src/core/fingerprint/types.ts
+export const RepoFingerprintSchema = z.object({
+  // ... existing fields ...
+  myNewField: z.string().optional(),          // safe for old caches
+  myRequiredField: z.string().default(''),   // required but backward-compatible
+})
+
+// AIAnalysisResponse in ai-collector.ts
+export const AIAnalysisResponseSchema = z.object({
+  // ... existing ...
+  myNewField: z.string().optional(),
+})
 ```
 
 ## Anti-Patterns
 
-- Do not add required fields without `.optional()` — breaks existing saved fingerprints
-- Do not write manual TypeScript interfaces — derive from Zod schema with `z.infer<>`
-- Do not access AI response fields before Zod parse — `AIFingerprintCollector` validates first
-- Do not modify `contentHash` exclusion logic without understanding drift semantics
+- Do not add required fields without `.default()` — old fingerprint.json files will fail to parse
+- Do not forget to update the JSON example in `templates/prompts/analysis.md.hbs` — the AI follows that schema
+- Do not put display/formatting logic in types.ts — keep it in generators or UI layer
 
 ## Checklist
 
-- [ ] Field added to `RepoFingerprintSchema` as `.optional()` for backwards compat
-- [ ] Field added to `AIAnalysisResponseSchema` if AI-sourced
-- [ ] `buildAnalysisPrompt()` / `analysis.md.hbs` updated to request the field
-- [ ] `createFingerprint()` maps new field from AI response
-- [ ] Tests updated in `tests/fingerprint/` to cover new field
+- [ ] New field added to `RepoFingerprintSchema` with `.optional()` or `.default()`
+- [ ] If AI-sourced: field added to `AIAnalysisResponseSchema` in `ai-collector.ts`
+- [ ] `buildAnalysisPrompt()` and `analysis.md.hbs` updated with new field in JSON example
+- [ ] `hasDrifted()` updated if the field should invalidate cached fingerprints
+- [ ] Existing tests still pass with old fixture data
+- [ ] New test covers the field being populated and round-tripped
 - [ ] `npm test` passes
-- [ ] README.md updated if user-visible
