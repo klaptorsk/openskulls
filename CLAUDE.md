@@ -34,14 +34,14 @@ Primary language: **TypeScript**.
 **Entry points**:
 - `src/index.ts`
 **Module structure**:
-- `src/cli/commands//`
-- `src/core/fingerprint//`
-- `src/core/generators//`
-- `src/core/packages//`
-- `src/core/config//`
-- `src/cli/ui//`
-- `templates//`
-- `tests//`
+- `src/cli/commands/`
+- `src/core/fingerprint/`
+- `src/core/generators/`
+- `src/core/packages/`
+- `src/core/config/`
+- `src/cli/ui/`
+- `templates/`
+- `tests/`
 
 <!-- /openskulls:section:architecture -->
 

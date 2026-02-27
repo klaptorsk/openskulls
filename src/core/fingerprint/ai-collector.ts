@@ -185,13 +185,20 @@ export class AIFingerprintCollector {
 // ─── AI CLI detection ─────────────────────────────────────────────────────────
 
 /**
+ * On Windows, npm-installed CLIs are .cmd wrappers (e.g. claude.cmd).
+ * Node's spawn() does not resolve PATHEXT without a shell, so we try the
+ * .cmd suffix first, then the bare name as a fallback.
+ */
+const WIN_CMD_SUFFIXES = process.platform === 'win32' ? ['.cmd', ''] : ['']
+
+/**
  * Run `command --version` and return the first line of output.
  * Checks both stdout and stderr (some CLIs write version to stderr).
  * Resolves with the version string on exit code 0, rejects otherwise.
  */
-async function runVersion(command: string): Promise<string> {
+async function trySpawnVersion(cmd: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, ['--version'], { shell: process.platform === 'win32' })
+    const child = spawn(cmd, ['--version'])
     let out = ''
 
     child.stdout.on('data', (d: Buffer) => { out += d.toString() })
@@ -204,7 +211,7 @@ async function runVersion(command: string): Promise<string> {
       if (code === 0 && firstLine) {
         resolve(firstLine)
       } else {
-        reject(new Error(`${command} --version exited ${String(code)}`))
+        reject(new Error(`${cmd} --version exited ${String(code)}`))
       }
     })
   })
@@ -212,11 +219,15 @@ async function runVersion(command: string): Promise<string> {
 
 export async function detectAICLI(): Promise<AICLIAdapter> {
   for (const candidate of AI_CLI_CANDIDATES) {
-    try {
-      const version = await runVersion(candidate.command)
-      return { ...candidate, version }
-    } catch {
-      // CLI not available — try next
+    for (const suffix of WIN_CMD_SUFFIXES) {
+      const cmd = candidate.command + suffix
+      try {
+        const version = await trySpawnVersion(cmd)
+        // Store the resolved command (e.g. 'claude.cmd') so invokeAICLI uses the same path
+        return { ...candidate, command: cmd, version }
+      } catch {
+        // try next suffix or next candidate
+      }
     }
   }
 
@@ -239,7 +250,7 @@ export async function invokeAICLI(
     // stdin style: `claude -p -`  — prompt written to child.stdin
     // arg style:   `codex -p "…"` — prompt passed as the -p argument
     const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
-    const child = spawn(adapter.command, args, { shell: process.platform === 'win32' })
+    const child = spawn(adapter.command, args)
     let out = ''
     let err = ''
 
