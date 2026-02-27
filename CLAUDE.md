@@ -4,7 +4,7 @@
 ## Project Overview
 
 CLI tool.
-Makes your repo readable to AI agents, then keeps it readable as the code evolves
+Makes your repo readable to AI agents, then keeps it readable as the code evolves.
 Primary language: **TypeScript**.
 
 <!-- /openskulls:section:overview -->

@@ -595,8 +595,8 @@ For full module structure, data flow diagrams, config file schemas, and an exten
 | Version | Focus |
 |---------|-------|
 | **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code, Cursor, Copilot, Codex generators — workflow rules — parallel skill generation — git hook |
-| **v0.2** | `openskulls audit` — skill registry + `openskulls add` — architecture doc generation |
-| **v0.3** | Feedback loop: `openskulls refine` — skill composition — CI mode — plugin API |
+| **v0.2** | `openskulls audit` — `openskulls diff` — `openskulls doctor` — skill registry + `openskulls add` — AI response cache — CI mode (`--ci` flag) |
+| **v0.3** | `openskulls sync --watch` — monorepo support — `openskulls skills push/pull` — plugin API — external package loading |
 | **v1.0** | Platform: org-level context — agent performance metrics — multi-agent profiles |
 
 ---

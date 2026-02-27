@@ -30,6 +30,38 @@
 
 ---
 
+## Architectural Debt (A-series)
+
+Refactors and bugs identified in architectural review (2026-02-27).
+
+| # | Task | Status |
+|---|---|---|
+| A-1 | **Extract shared prompt summary helper** — `buildAnalysisPrompt`, `buildSkillsPrompt`, and `buildArchitectPrompt` all duplicate a fingerprint→prose summary block. Extract `buildFingerprintSummary(fp, qa?)` into `src/core/fingerprint/shared.ts` | ⬜ Pending |
+| A-2 | **Centralize Handlebars instance** — `ClaudeCodeGenerator` registers helpers inline. Extract a single `createHandlebarsEnv()` factory in `src/core/generators/handlebars.ts` so all generators share the same registered helpers | ⬜ Pending |
+| A-3 | **Skip AI calls in `--dry-run`** — `init --dry-run` still invokes the full AI pipeline (analysis + skills + architect). Dry-run should load the existing fingerprint (if present) or skip AI calls entirely, only showing what *would* be generated | ⬜ Pending |
+| A-4 | **Sync uses `fingerprint.aiCLIs` not `config.targets`** — `sync.ts` derives generators from `fingerprint.aiCLIs` (what was detected) rather than `config.targets` (what the user selected). Sync should read `config.targets` as the authoritative source. Also add schema version check on fingerprint load to fail gracefully after schema migrations | ⬜ Pending |
+| A-5 | **Integration tests** — add at least one full pipeline integration test: `init` → write → `sync` → drift → re-sync, using real temp dirs + `makeContext()`. Currently only unit tests exist; generator interaction with `writeGeneratedFile` is untested end-to-end | ⬜ Pending |
+| A-6 | **Fix verbose/spinner interleaving** — `--verbose` output (`console.log`) interleaves with `ora` spinner frames, producing garbled terminal output. Buffer verbose lines and flush them after `spinner.succeed()` / `spinner.fail()` | ⬜ Pending |
+
+---
+
+## Extensions (E-series)
+
+New commands and features identified in architectural review.
+
+| # | Task | Status |
+|---|---|---|
+| E-1 | **`openskulls diff`** — show which sections would change (before/after) without writing anything. Pure read + generate pass, output as coloured unified diff. Useful in CI to see what a sync *would* do | ⬜ Pending |
+| E-2 | **`openskulls doctor`** — health check command: is the git hook installed? Is the fingerprint fresh (< 7 days old)? Do generated files match the stored fingerprint? Exits non-zero on any failure. Meant as a quick `make doctor` target for teams | ⬜ Pending |
+| E-3 | **AI response cache** — memoize analysis + skills AI calls by `contentHash`. If the fingerprint already exists and its hash matches the current repo, skip the AI calls and use the cached fingerprint. Saves ~10–30 s on unchanged repos | ⬜ Pending |
+| E-4 | **`openskulls sync --watch`** — file watcher mode using Node's `fs.watch`; re-runs sync whenever a trigger-pattern file changes. For teams that want live context updates without a git hook (e.g. when working on experimental branches) | ⬜ Pending |
+| E-5 | **External package / plugin loading** — wire `SkullPackage` loading from npm: `openskulls add fastapi-conventions` fetches a package, installs skills to `.claude/commands/`, pins in `.openskulls/skulls.lock`. The `Lockfile` Zod schema already exists | ⬜ Pending |
+| E-6 | **Monorepo support** — detect workspace roots (`package.json workspaces`, `pnpm-workspace.yaml`, Cargo workspace). Walk sub-packages independently, generating per-package fingerprints while sharing a root `CLAUDE.md` with a summary | ⬜ Pending |
+| E-7 | **`openskulls skills` subcommands** — `skills push` / `skills pull` / `skills list` using a configured git remote as a personal skill store. Supersedes task 14 | ⬜ Pending |
+| E-8 | **CI mode** — `openskulls sync --ci`: exit non-zero if drift is detected (without writing). Pairs with `openskulls audit --ci`. Meant for GitHub Actions gates to enforce fresh context before merging | ⬜ Pending |
+
+---
+
 ## Backlog
 
 | # | Task | Status |

@@ -10,16 +10,21 @@ This document describes the design principles, module structure, data flows, con
 
 1. [Design Principles](#design-principles)
 2. [Repository Layout](#repository-layout)
-3. [Key Data Structures](#key-data-structures)
-4. [`openskulls init` Flow](#openskulls-init-flow)
-5. [`openskulls sync` Flow](#openskulls-sync-flow)
-6. [AI Pipeline](#ai-pipeline)
-7. [Generator System](#generator-system)
-8. [Section Merge Strategy](#section-merge-strategy)
-9. [Config File Reference](#config-file-reference)
-10. [Git Hook](#git-hook)
-11. [Extending OpenSkulls](#extending-openskulls)
-12. [Known Implementation Gaps](#known-implementation-gaps)
+3. [Module Dependency Graph](#module-dependency-graph)
+4. [Key Data Structures](#key-data-structures)
+5. [`openskulls init` Flow](#openskulls-init-flow)
+6. [`openskulls sync` Flow](#openskulls-sync-flow)
+7. [AI Pipeline](#ai-pipeline)
+8. [Generator System](#generator-system)
+9. [Section Merge Strategy](#section-merge-strategy)
+10. [Drift Detection](#drift-detection)
+11. [Config File Reference](#config-file-reference)
+12. [Git Hook](#git-hook)
+13. [Test Strategy](#test-strategy)
+14. [Extending OpenSkulls](#extending-openskulls)
+15. [Architecture Decision Records](#architecture-decision-records)
+16. [Known Implementation Gaps](#known-implementation-gaps)
+17. [Invariants to Preserve](#invariants-to-preserve)
 
 ---
 
@@ -40,13 +45,16 @@ Every data structure (`RepoFingerprint`, `AISkill`, `ProjectConfig`, …) is def
 `RepoFingerprint.contentHash` is a SHA-256 of all fingerprint fields excluding machine-specific and ephemeral fields (`repoRoot`, `generatedAt`, `contentHash`). The same codebase on any machine produces the same hash. `hasDrifted(current, baseline)` is a single string comparison.
 
 ### 5. Preserve manual edits — section merge strategy
-OpenSkulls uses HTML comment markers (`<!-- openskulls:section:<id> -->`) to demarcate managed sections inside otherwise hand-editable files (e.g. `CLAUDE.md`). On re-generation, only the managed sections are replaced; everything the developer wrote by hand is preserved. New sections are appended. Removed sections are kept.
+OpenSkulls uses HTML comment markers (`<!-- openskulls:section:<id> -->`) to demarcate managed sections inside otherwise hand-editable files (e.g. `CLAUDE.md`). On re-generation, only the managed sections are replaced; everything the developer wrote by hand is preserved. New sections are appended.
 
 ### 6. Non-blocking automation
 The git hook (`post-commit`) always exits `0`. Every AI call in hook mode is wrapped in a `try/catch`. The tool must never block a commit or surface a crash to the terminal during background sync.
 
 ### 7. Stdin preferred for AI prompts
 `claude` receives prompts via `child.stdin` (invoked as `claude -p -`). This avoids `ARG_MAX` limits on large repos with many config files. Other CLIs (`codex`, `copilot`) receive the prompt as a `-p` argument because they do not accept stdin in the same way — see `AICLIAdapter.invoke: 'stdin' | 'arg'` in `ai-collector.ts`. Any new adapter that supports stdin **must** use it; arg-style is the fallback only when stdin is not available.
+
+### 8. Non-fatal AI degradation
+Skills generation (call 3) and architect skill generation (call 4) are explicitly non-fatal. If either fails, `init` and `sync` continue without them. The fingerprint (call 1) is the only fatal AI dependency.
 
 ---
 
@@ -59,17 +67,18 @@ openskulls/
 │   ├── cli/
 │   │   ├── index.ts                      ← Commander setup, command registration
 │   │   ├── ui/
-│   │   │   └── console.ts                ← log.*, panel(), table(), spinner(), fatal()
+│   │   │   ├── console.ts                ← log.*, panel(), table(), spinner(), fatal()
+│   │   │   └── prompts.ts                ← circleMultiselect() — @clack/core renderer
 │   │   └── commands/
 │   │       ├── init.ts                   ← `openskulls init` — 12-step flow
 │   │       ├── sync.ts                   ← `openskulls sync` — interactive + hook modes
 │   │       ├── hook.ts                   ← installGitHook(), shouldTriggerSync()
 │   │       ├── interviewer.ts            ← runInterviewer() — Part A (static) + Part B (AI Qs)
 │   │       ├── shared.ts                 ← writeGeneratedFile() shared by init + sync
-│   │       ├── audit.ts                  ← stub (pending)
-│   │       ├── add.ts                    ← stub (pending)
-│   │       ├── publish.ts                ← stub (pending)
-│   │       └── uninstall.ts              ← removes git hook
+│   │       ├── audit.ts                  ← stub (pending v0.2)
+│   │       ├── add.ts                    ← stub (pending v0.2)
+│   │       ├── publish.ts                ← stub (pending v0.2)
+│   │       └── uninstall.ts              ← removes git hook, generated files, sections
 │   └── core/
 │       ├── config/
 │       │   └── types.ts                  ← ProjectConfig, GlobalConfig, WorkflowConfig (Zod)
@@ -84,11 +93,13 @@ openskulls/
 │       │   └── cache.ts                  ← loadFingerprint(), saveFingerprint()
 │       ├── generators/
 │       │   ├── base.ts                   ← GeneratedFile, Generator interface, BaseGenerator
+│       │   ├── registry.ts               ← getBuiltinGenerators(), selectGenerators()
 │       │   ├── merge.ts                  ← mergeSections(), parseChunks(), extractSections()
 │       │   ├── shared.ts                 ← STYLE_LABELS, isConventionalCommits(), buildWorkflowRuleLines()
 │       │   ├── claude-code.ts            ← ClaudeCodeGenerator
 │       │   ├── copilot.ts                ← CopilotGenerator
-│       │   └── codex.ts                  ← CodexGenerator
+│       │   ├── codex.ts                  ← CodexGenerator
+│       │   └── cursor.ts                 ← CursorGenerator
 │       └── packages/
 │           └── types.ts                  ← SkullPackage, Skill, Rule, Lockfile (Zod)
 ├── templates/
@@ -99,12 +110,60 @@ openskulls/
 │       ├── questionnaire.md.hbs          ← AI questionnaire prompt template
 │       ├── skills.md.hbs                 ← AI skills generation prompt template
 │       └── architect.md.hbs              ← AI architect skill prompt template
+├── docs/
+│   └── ARCHITECTURE.md                   ← This file
 └── tests/
     ├── helpers/index.ts                  ← makeContext(files) — real temp dir factory
     ├── fingerprint/                      ← Unit tests for types, ai-collector, builders
-    ├── generators/                       ← Unit tests for claude-code, copilot, merge
+    ├── generators/                       ← Unit tests for claude-code, copilot, cursor, merge
     └── cli/                              ← Unit tests for hook logic
 ```
+
+---
+
+## Module Dependency Graph
+
+```
+src/index.ts
+    └── src/cli/index.ts (Commander, registers all commands)
+             ├── commands/init.ts
+             │     ├── core/fingerprint/ai-collector.ts  (AIFingerprintCollector, detectAICLIFor)
+             │     ├── core/fingerprint/questionnaire-builder.ts
+             │     ├── core/fingerprint/skills-builder.ts
+             │     ├── core/fingerprint/architect-builder.ts
+             │     ├── core/fingerprint/cache.ts
+             │     ├── core/generators/registry.ts  →  claude-code, copilot, codex, cursor
+             │     ├── core/config/types.ts
+             │     ├── cli/ui/console.ts
+             │     ├── cli/ui/prompts.ts
+             │     ├── commands/shared.ts
+             │     ├── commands/hook.ts
+             │     └── commands/interviewer.ts
+             ├── commands/sync.ts
+             │     ├── core/fingerprint/ai-collector.ts
+             │     ├── core/fingerprint/cache.ts
+             │     ├── core/fingerprint/types.ts   (hasDrifted)
+             │     ├── core/fingerprint/skills-builder.ts
+             │     ├── core/fingerprint/architect-builder.ts
+             │     ├── core/generators/registry.ts
+             │     ├── core/config/types.ts
+             │     ├── cli/ui/console.ts
+             │     └── commands/shared.ts
+             ├── commands/uninstall.ts
+             │     ├── cli/ui/console.ts
+             │     └── commands/hook.ts  (HOOK_MARKER)
+             ├── commands/audit.ts   (stub)
+             ├── commands/add.ts     (stub)
+             └── commands/publish.ts (stub)
+
+Pure dependency chain (no I/O):
+  templates/*.hbs  ←read at module load→  *-builder.ts  →  buildXxxPrompt()
+  core/fingerprint/types.ts  ←  core/generators/base.ts
+  core/generators/shared.ts  ←  claude-code.ts, copilot.ts, codex.ts, cursor.ts
+  core/generators/merge.ts   ←  commands/shared.ts
+```
+
+**Rule**: Nothing in `src/core/generators/` or `src/core/fingerprint/*-builder.ts` may import from `src/cli/`. The dependency is strictly one-way: CLI → core.
 
 ---
 
@@ -116,7 +175,7 @@ The central normalized model. All generators consume it; nothing reads the files
 ```
 RepoFingerprint {
   schemaVersion: string          // "1.0.0"
-  generatedAt:   string          // ISO timestamp
+  generatedAt:   string          // ISO timestamp (excluded from hash)
   repoRoot:      string          // absolute path (excluded from hash)
   repoName:      string
 
@@ -133,11 +192,13 @@ RepoFingerprint {
 
   description?:      string
   primaryLanguage?:  string      // computed — highest-% language
-  primaryFramework?: string      // computed — fullstack > backend
+  primaryFramework?: string      // computed — fullstack > backend > frontend priority
 
   contentHash:   string          // SHA-256 (excludes repoRoot, generatedAt, contentHash)
 }
 ```
+
+Every Signal type carries a `confidence: 'high' | 'medium' | 'low'` field. Generators use this to decide whether to include questionable detections.
 
 ### GeneratedFile
 What generators return. Never written by generators themselves.
@@ -152,7 +213,7 @@ GeneratedFile {
   isGitignored:  boolean
   mergeStrategy: 'replace'       // overwrite file entirely
                | 'merge_sections'// regenerate tagged sections only
-               | 'append'        // append if not present
+               | 'append'        // append if content not already present
 }
 ```
 
@@ -167,6 +228,21 @@ AISkill {
   content:     string   // full markdown body of the SKILL.md file
   category:    'workflow' | 'testing' | 'debugging'
              | 'refactoring' | 'documentation' | 'devops' | 'other'
+}
+```
+
+### AIQuestion
+Returned by `generateQuestionnaire()`. Presented to the user in Part B of the interviewer.
+
+```
+AIQuestion {
+  id:       string                        // answer key in qa map
+  category: 'rules' | 'workflow' | 'agents' | 'architect'
+  text:     string                        // question text shown to user
+  context:  string                        // why the AI thinks this matters
+  type:     'yesno' | 'choice' | 'text'
+  choices?: string[]                      // for 'choice' type
+  default?: string                        // pre-selected answer
 }
 ```
 
@@ -188,34 +264,31 @@ WorkflowConfig {
 
 ## `openskulls init` Flow
 
-Executed once per repo. Runs 3–4 AI calls, an interactive interviewer, multiple generators, and installs the git hook.
+Executed once per repo. Runs up to 4 AI calls, an interactive interviewer, multiple generators, and installs the git hook.
 
 ```
 User: openskulls init [path]
          │
          ▼
   ┌─────────────────────────────────────────────────────────────────┐
-  │  Step 0 — Detect AI engine                                      │
-  │  detectAICLI() → walks PATH, runs `cmd --version`               │
-  │  Priority: claude → codex → copilot                             │
-  │  Fatal if none found.                                            │
+  │  Step 0 — Select AI engine + tools                              │
+  │  circleMultiselect() → user picks tool(s)                       │
+  │  detectAICLIFor(selectedToolIds) → AICLIAdapter                 │
+  │  Fatal if no matching CLI found in PATH.                        │
   └────────────────────────────┬────────────────────────────────────┘
                                │ AICLIAdapter { command, invoke, version }
                                ▼
   ┌─────────────────────────────────────────────────────────────────┐
   │  Step 1 — Fingerprint collection                                 │
   │                                                                  │
-  │  AIFingerprintCollector.collect(repoRoot)                        │
-  │    │                                                             │
+  │  AIFingerprintCollector.collect(repoRoot, config?, logger?, adapter?)│
   │    ├─ scanRepo()          → fileTree[], configFiles Map          │
   │    ├─ readConfigContents()→ config file contents (≤32 KB each)   │
   │    ├─ detectAICLIs()      → AICLISignal[] (pure, no AI)          │
-  │    ├─ buildAnalysisPrompt()→ prompt string                       │
-  │    ├─ invokeAICLI() ─────────────────────────────────────────── │
-  │    │      AI Call 1: repo analysis                               │
+  │    ├─ buildAnalysisPrompt()→ prompt string (Handlebars)          │
+  │    ├─ invokeAICLI()  [AI CALL 1 — fatal]                        │
   │    │      stdin → claude -p -                                    │
   │    │      response → AIAnalysisResponse (Zod-validated)          │
-  │    │                                                             │
   │    └─ createFingerprint() → RepoFingerprint (with contentHash)   │
   └────────────────────────────┬────────────────────────────────────┘
                                │ RepoFingerprint
@@ -227,63 +300,44 @@ User: openskulls init [path]
                                │
                                ▼
   ┌─────────────────────────────────────────────────────────────────┐
-  │  Step 3 — AI questionnaire generation (skipped with --yes)       │
+  │  Step 3 — AI questionnaire (skipped with --yes)                  │
   │                                                                  │
-  │  generateQuestionnaire(fingerprint)                              │
-  │    AI Call 2: questionnaire                                      │
-  │    prompt: buildQuestionnairePrompt(fingerprint)                  │
-  │    response → AIQuestion[]   (0–8 repo-specific questions)       │
-  │    Non-fatal: returns [] on failure                              │
+  │  generateQuestionnaire(fingerprint)  [AI CALL 2 — non-fatal]    │
+  │    prompt: buildQuestionnairePrompt(fingerprint)                 │
+  │    response → AIQuestion[] (0–8 repo-specific questions)         │
+  │    Returns [] on failure                                         │
   └────────────────────────────┬────────────────────────────────────┘
                                │ AIQuestion[]
                                ▼
   ┌─────────────────────────────────────────────────────────────────┐
-  │  Step 4 — Interviewer                                            │
+  │  Step 4 — Interviewer (skipped with --yes)                       │
   │                                                                  │
   │  runInterviewer({ yes }, aiQuestions)                            │
-  │    Part A: Static workflow questions (always):                   │
-  │      - auto-docs preference (always/ask/never)                   │
-  │      - auto-commit preference (always/ask/never)                 │
-  │      - architect agent on/off + domain + review trigger          │
-  │      - subagent generation mode                                  │
-  │    Part B: Dynamic AI questions (if aiQuestions.length > 0):     │
-  │      - yesno / choice / text question types                      │
-  │      - answers saved to qa map                                   │
-  │                                                                  │
-  │  Returns: UserContext { workflowConfig, qa }                     │
+  │    Part A: Static — auto-docs, auto-commit, architect, subagents │
+  │    Part B: Dynamic — AI questions (yesno/choice/text)            │
+  │    Returns: UserContext { workflowConfig, qa }                   │
   └────────────────────────────┬────────────────────────────────────┘
                                │ UserContext
                                ▼
   ┌─────────────────────────────────────────────────────────────────┐
-  │  Step 5 — AI skills generation                                   │
+  │  Steps 5–6 — Skills generation                                   │
   │                                                                  │
-  │  generateAISkills(fingerprint, logger, qa)                       │
-  │    AI Call 3: skills                                             │
-  │    prompt: buildSkillsPrompt(fingerprint, qa)                    │
-  │    response → AISkill[]                                          │
-  │    Non-fatal: [] on failure                                      │
-  └────────────────────────────┬────────────────────────────────────┘
-                               │ AISkill[]
-                               ▼
-  ┌─────────────────────────────────────────────────────────────────┐
-  │  Step 6 — Architect skill generation (if architectEnabled)       │
+  │  Sequential (default):                                           │
+  │    generateAISkills(fingerprint, logger, qa)  [AI CALL 3]        │
+  │    generateArchitectSkill(...)  [AI CALL 4 — if architectEnabled]│
   │                                                                  │
-  │  generateArchitectSkill(fingerprint, workflowConfig, logger, qa) │
-  │    AI Call 4: architect                                          │
-  │    prompt: buildArchitectPrompt(fingerprint, workflowConfig, qa) │
-  │    response → AISkill (single, prepended to skills list)         │
-  │    Non-fatal: skipped on failure                                 │
+  │  Parallel (useSubagents = true):                                 │
+  │    Promise.allSettled([Call 3, Call 4])                          │
+  │                                                                  │
+  │  Both non-fatal — [] / skipped on error                          │
   └────────────────────────────┬────────────────────────────────────┘
-                               │ AISkill[] (architect first)
+                               │ AISkill[] (architect prepended if enabled)
                                ▼
   ┌─────────────────────────────────────────────────────────────────┐
   │  Step 7 — File generation (pure, no I/O)                         │
   │                                                                  │
-  │  toolsToGenerate = active engine ∪ repo-detected AI CLIs         │
-  │                                                                  │
-  │  ClaudeCodeGenerator.generate(input)  → GeneratedFile[]          │
-  │  CopilotGenerator.generate(input)     → GeneratedFile[]  if set  │
-  │  CodexGenerator.generate(input)       → GeneratedFile[]  if set  │
+  │  toolsToGenerate = user-selected ∪ fingerprint.aiCLIs            │
+  │  selectGenerators(toolsToGenerate).flatMap(g => g.generate(…))   │
   └────────────────────────────┬────────────────────────────────────┘
                                │ GeneratedFile[]
                                ▼
@@ -293,7 +347,8 @@ User: openskulls init [path]
   └────────────────────────────┬────────────────────────────────────┘
                                ▼
   ┌─────────────────────────────────────────────────────────────────┐
-  │  Step 9 — Confirm (skip with --yes or --dry-run)                 │
+  │  Step 9 — Confirm  [skipped with --yes or --dry-run]             │
+  │  confirm({ message: 'Write these files?' }) via @clack/prompts  │
   └────────────────────────────┬────────────────────────────────────┘
                                ▼
   ┌─────────────────────────────────────────────────────────────────┐
@@ -347,11 +402,11 @@ User: openskulls sync [path]
   generateArchitectSkill()    ← non-fatal, only if architectEnabled
          │
          ▼
-  ClaudeCodeGenerator.generate() → GeneratedFile[]
-  + CopilotGenerator (if copilot in aiCLIs)
+  selectGenerators(activeTools).flatMap(g => g.generate(…))
+  where: activeTools = Set(['claude_code', ...fingerprint.aiCLIs.map(a => a.tool)])
          │
          ▼
-  Show plan → Confirm → Write files → saveFingerprint()
+  Show plan → confirm() → Write files → saveFingerprint()
 ```
 
 ### Hook Mode (post-commit)
@@ -359,7 +414,6 @@ User: openskulls sync [path]
 ```
 .git/hooks/post-commit fires
   └─ openskulls sync --hook --changed "$changed"
-
          │
          ▼
   shouldTriggerSync(changedFiles, triggerPatterns)?
@@ -373,88 +427,79 @@ User: openskulls sync [path]
          │
          ▼
   AIFingerprintCollector.collect() → current
-         │
-         ▼
   hasDrifted(current, baseline)?
     ├─ NO  → exit 0
-    └─ YES ↓
-         │
-         ▼
-  generateAISkills()          ← try/catch, silent on error
-  generateArchitectSkill()    ← try/catch, silent on error
-         │
-         ▼
-  Generate + write files silently
-  saveFingerprint()
-         │
-         ▼
-  exit 0  ← always, never blocks the commit
+    └─ YES → generate + write silently → saveFingerprint() → exit 0
 ```
 
-**Trigger patterns** (files that cause a hook run):
-```
-package.json, package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb
-requirements*.txt, pyproject.toml, Pipfile, Pipfile.lock
-go.mod, go.sum, Cargo.toml, Cargo.lock
-Gemfile, Gemfile.lock, tsconfig*.json
-.github/workflows/**
-```
+All hook operations are wrapped in a top-level `try/catch`. The hook always exits 0.
 
 ---
 
 ## AI Pipeline
 
-Three (or four) sequential AI CLI invocations during `init`. Each is a `claude -p -` call with a Handlebars-rendered prompt written to stdin.
+Up to four sequential AI CLI invocations during `init`. Each is a subprocess call with a Handlebars-rendered prompt.
 
 ```
-                 RepoFingerprint
-                       │
-        ┌──────────────┼──────────────────┐
-        │              │                  │
-        ▼              ▼                  ▼
-  Call 1: Analysis   Call 2: Questions   Call 3: Skills
-  ─────────────────  ─────────────────   ─────────────
-  Prompt:            Prompt:             Prompt:
-  analysis.md.hbs    questionnaire       skills.md.hbs
-  + fileTree         .md.hbs             + fingerprint
-  + configContents   + fingerprint       + qa answers
-                     summary
-  Returns:           Returns:            Returns:
-  AIAnalysisResponse AIQuestionnaireResponse  AISkillsResponse
-  (Zod-validated)    { questions:        { skills: AISkill[] }
-                       AIQuestion[] }
-  Used to build:     Presented to user   Emitted as:
-  RepoFingerprint    via runInterviewer()  .claude/skills/<id>/SKILL.md
-                     → qa map              .claude/skills.md (index)
+                           RepoFingerprint
+                                 │
+          ┌──────────────────────┼──────────────────────┐
+          │                      │                      │
+          ▼                      ▼                      ▼
+   Call 1: Analysis       Call 2: Questions      Call 3: Skills
+   ─────────────────       ─────────────────     ──────────────────
+   analysis.md.hbs         questionnaire          skills.md.hbs
+   + fileTree              .md.hbs                + fingerprint
+   + configContents        + fingerprint          + qa answers
+                           summary
+   → AIAnalysisResponse    → AIQuestion[]         → AISkill[]
+   [FATAL]                 [NON-FATAL]            [NON-FATAL]
 
-        Call 4 (optional): Architect
-        ────────────────────────────
-        Prompt: architect.md.hbs
-          + fingerprint summary
-          + workflowConfig
-          + qa answers
-        Returns: AISkill (single)
-        Emitted as: .claude/skills/architect-review/SKILL.md
+          Call 4 (optional, if architectEnabled):
+          ─────────────────────────────────────────
+          architect.md.hbs
+          + fingerprint summary + workflowConfig + qa
+          → AISkill (single, prepended to skills list)
+          [NON-FATAL]
 ```
 
-**Common invocation path:**
+**Prompt template → builder function mapping:**
+
+| Template | Builder | Called from |
+|---|---|---|
+| `analysis.md.hbs` | `buildAnalysisPrompt()` | `AIFingerprintCollector.collect()` |
+| `questionnaire.md.hbs` | `buildQuestionnairePrompt()` | `generateQuestionnaire()` |
+| `skills.md.hbs` | `buildSkillsPrompt()` | `generateAISkills()` |
+| `architect.md.hbs` | `buildArchitectPrompt()` | `generateArchitectSkill()` |
+
+All builder functions are **pure** — they take data and return a string. No I/O, no side effects.
+
+**Common invocation path in `invokeAICLI()`:**
 
 ```
-detectAICLI()
-  → runVersion("claude")  → AICLIAdapter { command: "claude", invoke: "stdin" }
-
-invokeAICLI(adapter, prompt, timeoutMs)
-  → spawn("claude", ["-p", "-"])
+stdin mode (claude):
+  spawn("claude", ["-p", "-"])
   → write prompt to child.stdin
   → collect stdout
-  → on exit(0): resolve(stdout)
-  → on timeout: kill + reject
-  → on exit(!0): reject
+  → resolve(stdout) on exit(0) | reject on timeout or exit(!0)
 
-stripJsonFences(raw)   ← removes ```json ... ``` wrappers
-JSON.parse(cleaned)
-Schema.parse(data)     ← Zod validates structure
+arg mode (copilot, codex):
+  spawn("copilot", ["-p", "...prompt..."])
+  → collect stdout
+  → resolve / reject as above
+
+powershell mode (Windows copilot):
+  spawn("powershell.exe", ["-NoProfile", "-Command", "copilot -p $env:__OPENSKULLS_PROMPT"],
+    { env: { __OPENSKULLS_PROMPT: prompt } })
+  ⚠ Known issue: long multi-line prompts may be mangled — see Task I-3
+
+After collecting output:
+  stripJsonFences(raw)   ← removes ```json ... ``` wrappers
+  JSON.parse(cleaned)
+  Schema.parse(data)     ← Zod validates; throws ZodError on mismatch
 ```
+
+**Timeout**: 120 seconds per call. On timeout, the child process is killed and the call rejects.
 
 ---
 
@@ -464,12 +509,12 @@ Schema.parse(data)     ← Zod validates structure
 
 ```typescript
 interface Generator {
-  toolId:         string            // "claude_code", "copilot", "codex"
+  toolId:         string            // "claude_code" | "copilot" | "codex" | "cursor"
   toolName:       string            // "Claude Code"
-  detectionFiles: readonly string[] // signals this tool is in use
+  detectionFiles: readonly string[] // signals this tool is in use in the repo
 
   generate(input: GeneratorInput): GeneratedFile[]
-  // MUST be: pure, stateless, side-effect-free
+  // MUST be: pure, stateless, deterministic, side-effect-free
 }
 ```
 
@@ -492,14 +537,13 @@ GeneratorInput {
 ```
 ClaudeCodeGenerator (toolId: "claude_code")
   ├─ CLAUDE.md                              base=repo,  merge_sections
-  │    Handlebars template (CLAUDE.md.hbs)
-  │    Sections: overview, tech_stack, architecture, conventions, testing, workflow_rules
+  │    Rendered via templates/claude-code/CLAUDE.md.hbs
+  │    Sections: overview, tech_stack, architecture, conventions,
+  │              testing, cicd, workflow_rules, agent_guidance
   ├─ .claude/commands/run-tests.md          base=repo,  replace  (if testing detected)
   ├─ .claude/commands/commit.md             base=repo,  replace  (if conventional commits)
   ├─ .claude/skills.md                      base=repo,  merge_sections  (if aiSkills present)
-  │    Index of all skills, grouped by category
   ├─ .claude/skills/<id>/SKILL.md           base=repo,  replace  (one per AISkill)
-  │    YAML frontmatter (name, description) + markdown body
   └─ .claude/settings.json                  base=repo,  replace
 
 CopilotGenerator (toolId: "copilot")
@@ -507,18 +551,32 @@ CopilotGenerator (toolId: "copilot")
 
 CodexGenerator (toolId: "codex")
   └─ AGENTS.md                              base=repo,  merge_sections
+
+CursorGenerator (toolId: "cursor")
+  └─ .cursor/rules/project.mdc             base=repo,  merge_sections
+       YAML frontmatter: alwaysApply: true
 ```
 
-### Generator selection in init
+### Registry
 
-```
-toolsToGenerate = Set(
-  ENGINE_TO_TOOL[adapter.command],          // active AI engine
-  ...fingerprint.aiCLIs.map(a => a.tool)    // tools already configured in repo
-)
+All generators are registered in `src/core/generators/registry.ts`:
+
+```typescript
+export function getBuiltinGenerators(): Generator[] {
+  return [
+    new ClaudeCodeGenerator(),
+    new CopilotGenerator(),
+    new CodexGenerator(),
+    new CursorGenerator(),
+  ]
+}
+
+export function selectGenerators(toolIds: ReadonlySet<string>): Generator[] {
+  return getBuiltinGenerators().filter(g => toolIds.has(g.toolId))
+}
 ```
 
-This means running `openskulls init` with Copilot active on a repo that already has `CLAUDE.md` will generate both `CLAUDE.md` and `.github/copilot-instructions.md`.
+Both `init.ts` and `sync.ts` call `selectGenerators()`. Adding a new built-in generator requires only registering it in the registry — no changes to command files.
 
 ---
 
@@ -539,7 +597,7 @@ BEFORE (existing CLAUDE.md):              AFTER merge:
   # My Project                              # My Project        ← preserved
 
   <!-- openskulls:section:overview -->      <!-- openskulls:section:overview -->
-  ## Overview                               ## Overview         ← REPLACED with new
+  ## Overview                               ## Overview         ← REPLACED
   Old AI-generated overview                 New AI-generated overview
   <!-- /openskulls:section:overview -->     <!-- /openskulls:section:overview -->
 
@@ -551,15 +609,51 @@ BEFORE (existing CLAUDE.md):              AFTER merge:
   <!-- /openskulls:section:tech_stack -->   <!-- /openskulls:section:tech_stack -->
 
                                             <!-- openskulls:section:new_section -->
-                                            New section added   ← APPENDED
+                                            New section         ← APPENDED
                                             <!-- /openskulls:section:new_section -->
 ```
 
 **Rules:**
 - Section in both old and new → new version replaces old
-- Section only in old → kept as-is (template dropped it, preserve anyway)
+- Section only in old → kept as-is (template dropped it; preserve anyway)
 - Section only in new → appended at end
 - Manual text → never touched
+
+The implementation (`parse → map → rebuild`) is a pure function with no I/O. See `src/core/generators/merge.ts`.
+
+---
+
+## Drift Detection
+
+After `init`, the fingerprint is saved to `.openskulls/fingerprint.json`. On every `sync`, a fresh fingerprint is collected and compared by content hash.
+
+```
+contentHash = SHA-256(
+  JSON.stringify(
+    { all fingerprint fields EXCEPT repoRoot, generatedAt, contentHash },
+    (key, value) => sort object keys for determinism
+  )
+)
+
+hasDrifted(current, baseline):
+  return current.contentHash !== baseline.contentHash
+```
+
+The hash is machine-independent: it excludes the absolute `repoRoot` path and the ephemeral `generatedAt` timestamp. The same codebase produces the same hash on any machine.
+
+**What causes drift:**
+- Language/framework detected or removed
+- Version change in a core dependency
+- Testing framework changed
+- Linting tools added or removed
+- Conventional commits style flipped
+- Architecture style reclassified
+- AI CLI context files added
+
+**What does NOT cause drift:**
+- Timestamps
+- Machine paths
+- Fields in `HASH_EXCLUDE` in `types.ts`
 
 ---
 
@@ -572,51 +666,37 @@ Written by `openskulls init`, updated by `openskulls sync`. Committed with the r
 schema_version = "1.0.0"
 
 # Which AI context generators are active for this repo.
-# name values: "claude_code" | "codex" | "copilot"
 [[targets]]
 name    = "claude_code"
 enabled = true
 
 [[targets]]
-name    = "copilot"
-enabled = false
+name    = "cursor"
+enabled = true
 
-# Paths excluded from repo analysis and file tree sent to AI.
+# Paths excluded from repo analysis and the file tree sent to AI.
 exclude_paths = [
   "node_modules", ".git", "dist", "build",
   ".venv", "__pycache__", ".next", ".nuxt", "coverage"
 ]
 
 [workflow]
-# How Claude should handle documentation updates.
-# "always" = do it automatically, "ask" = prompt the user, "never" = skip
-auto_docs         = "ask"
-
-# Whether Claude should auto-commit after completing a task.
-auto_commit       = "ask"
-
-# Whether to generate a domain-expert architect skill.
+auto_docs         = "ask"     # "always" | "ask" | "never"
+auto_commit       = "ask"     # "always" | "ask" | "never"
 architect_enabled = false
-
-# Domain focus for the architect (e.g. "fintech", "developer tooling").
-# Leave blank to auto-detect from project signals.
-architect_domain  = ""
-
-# When the architect should review new features.
-architect_review  = "ask"
-
-# Whether to use parallel subagents for skill generation.
-use_subagents     = false
+architect_domain  = ""        # blank = auto-detect from project signals
+architect_review  = "ask"     # "always" | "ask" | "never"
+use_subagents     = false     # true = run skills + architect in parallel
 
 # Saved answers from the AI questionnaire (keys = AIQuestion.id).
-# These are fed back into subsequent AI calls (skills, architect).
+# Fed back into skills and architect AI calls.
 [workflow.answers]
 testing_strategy    = "unit+integration"
 deployment_target   = "vercel"
 ```
 
 ### `.openskulls/fingerprint.json`
-Written by `openskulls init` and `openskulls sync`. Used for drift detection. **Do not edit by hand.**
+Written by `init` and `sync`. Used for drift detection. Do not edit by hand.
 
 ```json
 {
@@ -625,27 +705,14 @@ Written by `openskulls init` and `openskulls sync`. Used for drift detection. **
   "repoRoot": "/home/user/myproject",
   "repoName": "myproject",
   "contentHash": "a3f9c2...",
-
   "languages": [
     { "name": "TypeScript", "version": "5.5.0", "confidence": "high",
       "percentage": 95, "primary": true, "evidence": ["tsconfig.json found"] }
   ],
-  "frameworks": [
-    { "name": "commander", "version": "12.1.0", "confidence": "high",
-      "category": "cli", "evidence": ["package.json dependency"] }
-  ],
-  "conventions": [
-    { "name": "package_manager", "value": "npm", "confidence": "high",
-      "evidence": ["package-lock.json found"] }
-  ],
-  "dependencies": [
-    { "runtime": { "zod": "^3.23.8" }, "dev": { "vitest": "^2.0.0" },
-      "peer": {}, "sourceFile": "package.json" }
-  ],
-  "testing": {
-    "framework": "vitest", "pattern": "tests/**/*.test.ts",
-    "coverageTool": "v8", "confidence": "high"
-  },
+  "frameworks": [...],
+  "conventions": [...],
+  "dependencies": [...],
+  "testing": { "framework": "vitest", "pattern": "tests/**/*.test.ts", "coverageTool": "v8" },
   "linting": { "tools": ["eslint"], "configFiles": ["eslint.config.js"], "styleRules": {} },
   "architecture": {
     "style": "cli", "entryPoints": ["src/index.ts"],
@@ -659,39 +726,8 @@ Written by `openskulls init` and `openskulls sync`. Used for drift detection. **
 }
 ```
 
-### `.claude/settings.json`
-Minimal Claude Code settings file. Replaced on every sync.
-
-```json
-{
-  "version": 1
-}
-```
-
-### `.claude/skills.md`
-Auto-generated index of all AI-generated skills. Uses `merge_sections` strategy.
-
-```markdown
-<!-- openskulls:section:skills -->
-# Project Skills
-
-> Auto-generated — run `openskulls sync` to update.
-> Each skill lives at `.claude/skills/<id>/SKILL.md` and is available as a `/<id>` slash command.
-
-## Workflow
-
-### Add a New Command
-`/add-command` — Use when adding a new top-level command to the CLI.
-
-## Testing
-
-### Run Integration Tests
-`/integration-test` — Run the full integration test suite against a live environment.
-<!-- /openskulls:section:skills -->
-```
-
 ### `.claude/skills/<id>/SKILL.md`
-One per AI-generated skill. YAML frontmatter + markdown body. Replaced on every sync.
+One per AI-generated skill. YAML frontmatter + markdown body.
 
 ```markdown
 ---
@@ -711,7 +747,7 @@ description: >
 
 ## Git Hook
 
-Installed at `.git/hooks/post-commit` by `openskulls init`. Removed by `openskulls uninstall`.
+Installed at `.git/hooks/post-commit` by `openskulls init`.
 
 ```sh
 #!/bin/sh
@@ -724,10 +760,50 @@ exit 0
 ```
 
 **Key design points:**
-- `command -v openskulls` guard: silently exits if openskulls is not on PATH (e.g. after uninstalling globally but not removing the hook)
-- Passes changed filenames so `shouldTriggerSync()` can skip the AI call when no trigger-pattern file was modified
-- Always exits `0` — the hook is advisory, never blocking
+- `command -v openskulls` guard: silently exits if binary not on PATH (e.g. after global uninstall without hook removal)
+- Passes changed filenames to `shouldTriggerSync()` — skips AI call if no trigger-pattern file changed
+- Always exits `0` — advisory, never blocking
 - Idempotent: `installGitHook()` checks for `HOOK_MARKER` before writing
+
+**Default trigger patterns** (files that cause a hook-mode sync):
+```
+package.json, package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb
+requirements*.txt, pyproject.toml, Pipfile, Pipfile.lock
+go.mod, go.sum, Cargo.toml, Cargo.lock
+Gemfile, Gemfile.lock, tsconfig*.json, .github/workflows/**
+```
+
+---
+
+## Test Strategy
+
+### What is tested
+
+| Layer | Coverage | How |
+|---|---|---|
+| Zod schemas + `createFingerprint`, `hasDrifted` | ✅ | Direct function calls |
+| `detectAICLIs()`, `stripJsonFences()` | ✅ | Pure function tests |
+| `AISkill` / `AISkillsResponse` schema validation | ✅ | Zod parse tests |
+| `mergeSections()`, `parseChunks()`, `extractSections()` | ✅ | Pure function tests |
+| `ClaudeCodeGenerator.generate()` | ✅ | Assert on `GeneratedFile[]` |
+| `CopilotGenerator` content builder | ✅ | Pure function tests |
+| `CursorGenerator` content builder | ✅ | Pure function tests |
+| `matchesTriggerPattern()`, `shouldTriggerSync()` | ✅ | Pure function tests |
+
+### What is not tested
+
+| Gap | Why | Path forward |
+|---|---|---|
+| `AIFingerprintCollector.collect()` E2E | Requires spawning a real AI CLI | Integration test with mock CLI (Task A-5) |
+| `invokeAICLI()` subprocess | Subprocess mocking is fragile | Mock via `AICLIAdapter` injection |
+| `init.ts` / `sync.ts` orchestration | Complex async + interactive prompts | Integration test with `--yes --dry-run` |
+| PowerShell invocation path | Platform-specific | Manual test on Windows (Task I-3) |
+| `mergeSections()` with malformed markers | Edge cases not all covered | Additional unit tests (Task A-5) |
+| Config TOML load/parse | `loadWorkflowConfig()` not directly tested | Unit test with temp files |
+
+### Test helper
+
+`tests/helpers/index.ts` exports `makeContext(files: Record<string, string>)` which creates a real temp directory tree, returns `{ ctx, dir, cleanup }`, and guarantees cleanup after each test. Use this for any test that needs a filesystem.
 
 ---
 
@@ -747,30 +823,36 @@ export class MyToolGenerator extends BaseGenerator {
 
   generate(input: GeneratorInput): GeneratedFile[] {
     const { fingerprint } = input
-    // Build content — pure function, no I/O
+    // Pure — no I/O, no network, no filesystem reads
     const content = `# Context for ${fingerprint.repoName}\n`
     return [repoFile('.mytool/context.md', content, 'merge_sections')]
   }
 }
 ```
 
-2. Register in `src/cli/commands/init.ts`:
-   - Add `'my_tool'` to `ENGINE_TO_TOOL` and `ALL_TARGETS` in `init.ts`
-   - Add a `toolsToGenerate.has('my_tool')` branch calling `new MyToolGenerator().generate(generatorInput)`
+2. Register in `src/core/generators/registry.ts`:
 
-3. Register in `src/cli/commands/sync.ts`:
-   - The sync interactive mode adds generators by checking `fingerprint.aiCLIs` (not `ENGINE_TO_TOOL`). Add a matching branch:
-     ```typescript
-     if (detectedTools.includes('my_tool')) {
-       generatedFiles.push(...new MyToolGenerator().generate(generatorInput))
-     }
-     ```
-   - Do the same in `hookMode` inside `sync.ts`.
-   - **Note**: as of v0.1, `CodexGenerator` is only called in `init.ts`, not `sync.ts`. This is a known gap (see [Known Implementation Gaps](#known-implementation-gaps)) — do not repeat the pattern.
+```typescript
+import { MyToolGenerator } from './my-tool.js'
 
-4. Add detection logic in `detectAICLIs()` in `ai-collector.ts` if the tool leaves config files in the repo.
+export function getBuiltinGenerators(): Generator[] {
+  return [
+    new ClaudeCodeGenerator(),
+    new CopilotGenerator(),
+    new CodexGenerator(),
+    new CursorGenerator(),
+    new MyToolGenerator(),   // ← add here
+  ]
+}
+```
+
+3. Add detection logic in `detectAICLIs()` in `ai-collector.ts` if the tool leaves config files in the repo (so it's auto-included in sync).
+
+4. Add the tool ID to `ALL_TARGETS` in `init.ts` (so `config.toml` tracks it).
 
 5. Write tests in `tests/generators/<name>.test.ts` using `makeContext()`.
+
+That's it — no changes to `init.ts` or `sync.ts`. The registry handles selection.
 
 ### Add a new top-level command
 
@@ -778,30 +860,83 @@ Use the `/add-command` skill or follow this pattern:
 
 1. Create `src/cli/commands/<name>.ts` with a `register<Name>(program: Command)` function
 2. Import and call it in `src/cli/index.ts`
-3. Implement business logic; call `AIFingerprintCollector` and generators as needed
+3. Use `@clack/prompts` for interactive prompts (see `src/cli/ui/prompts.ts` for the `circleMultiselect` pattern)
+4. Use `AIFingerprintCollector` + generators as needed
 
 ### Add a new fingerprint field
 
 1. Add the field to the relevant Zod schema in `src/core/fingerprint/types.ts`
-2. Update `buildAnalysisPrompt()` in `prompt-builder.ts` to ask the AI for the new field
+2. Update `buildAnalysisPrompt()` in `prompt-builder.ts` to ask the AI for it
 3. Update `AIAnalysisResponse` in `ai-collector.ts` if the field comes from the AI
-4. Update any generators that should use the new field
-5. Update `HASH_EXCLUDE` in `types.ts` only if the field should not affect drift detection
+4. Update any generators that should use the field
+5. Update `HASH_EXCLUDE` in `types.ts` only if the field should not trigger drift detection
 
 ### Add new AI prompt templates
 
-All prompt templates are Handlebars (`.md.hbs`) files under `templates/prompts/`. They are loaded once at module load and compiled. To add or modify a prompt:
+All prompt templates are Handlebars (`.md.hbs`) files under `templates/prompts/`. To add or modify:
 
 1. Edit or add a `.hbs` file under `templates/prompts/`
-2. The corresponding `*-builder.ts` file loads it via `readFileSync` + `Handlebars.compile()`
-3. No TypeScript changes needed if the template variable names stay the same
+2. The corresponding `*-builder.ts` loads it via `readFileSync` + `Handlebars.compile()`
+3. No TypeScript changes are needed if template variable names are unchanged
 
 ### Add a new config field
 
-1. Add the field to the appropriate Zod schema in `src/core/config/types.ts`
-2. Update `saveConfig()` in `init.ts` to write the new field to `config.toml`
-3. Update `loadWorkflowConfig()` if reading the field back is needed
-4. Update the [Config File Reference](#config-file-reference) in this document
+1. Add the field to the Zod schema in `src/core/config/types.ts`
+2. Update `saveConfig()` in `init.ts` to write it to `config.toml`
+3. Update `loadWorkflowConfig()` if reading it back is needed
+4. Update the Config File Reference section in this document
+
+---
+
+## Architecture Decision Records
+
+### ADR-1: AI-first analysis (no language parsers)
+
+**Context**: Initial design had hand-written parsers for Python, JS/TS, Go. These were accurate for known languages but blind to anything else, required maintenance per-language, and couldn't detect conventions or architecture style.
+
+**Decision**: Replace all parsers with a single AI prompt that receives the file tree and config file contents. Validate the response with Zod. The local code does only the filesystem work that's cheaper than asking the AI: directory walking and file reading.
+
+**Consequences**: Zero language-specific code. New languages, frameworks, and conventions are detected automatically. The AI call is the new performance bottleneck (120s timeout). Quality depends on prompt clarity and AI capability.
+
+---
+
+### ADR-2: Generators as pure functions
+
+**Context**: Easy to write generators that call `fs.readFileSync()` or `fetch()` inline. Makes testing complex.
+
+**Decision**: `generate()` must be a pure function. All state flows in via `GeneratorInput`. All I/O stays in the CLI layer.
+
+**Consequences**: Generators are unit-testable with `assert(file.content)` — no filesystem mocking. The CLI layer owns all write concerns (merge strategy, path resolution, dry-run). Adding dry-run, diff preview, or CI mode requires zero changes to generators.
+
+---
+
+### ADR-3: HTML comments for section markers (not a custom syntax)
+
+**Context**: Needed a way to identify auto-generated blocks in Markdown files without breaking rendering.
+
+**Decision**: Use HTML comments `<!-- openskulls:section:id -->` because they are invisible in rendered Markdown, supported by all parsers, and unambiguous even if the user edits the file.
+
+**Consequences**: Markers survive editing in any Markdown editor. The regex-based parser in `merge.ts` is simple. Downside: markers are verbose; users sometimes delete them accidentally.
+
+---
+
+### ADR-4: SHA-256 content hash over the whole fingerprint
+
+**Context**: Needed a reliable, machine-independent signal for "did the repo change in a meaningful way?"
+
+**Decision**: Hash the entire fingerprint JSON (sorted keys, excluding `repoRoot`, `generatedAt`, `contentHash`). Any signal change — including minor version bumps, new frameworks, or linting tools — triggers regeneration.
+
+**Consequences**: Very sensitive drift detection. False positives are possible (AI re-classifies something slightly differently). Could add per-field granularity later, but the simple `string !== string` check is reliable enough for v0.1.
+
+---
+
+### ADR-5: Interactive prompts via @clack/prompts
+
+**Context**: Initial implementation used raw `readline/promises` with numbered menus, requiring users to type `1`, `2`, `3`.
+
+**Decision**: Replace with `@clack/prompts` for arrow-key selection (select, confirm, text) and a custom `circleMultiselect` renderer using `@clack/core`'s `MultiSelectPrompt` with ●/○ circles instead of ◼/◻ squares.
+
+**Consequences**: Better UX. The `circleMultiselect` is a ~70-line wrapper that must be kept in sync with `@clack/core`'s `MultiSelectPrompt` API. The `--yes` flag bypasses all interactive prompts.
 
 ---
 
@@ -811,10 +946,16 @@ These are places where the current code diverges from the ideal design. Each is 
 
 | Gap | Location | Impact | Tracking |
 |---|---|---|---|
-| `CodexGenerator` not called in `sync.ts` | `sync.ts` interactive + hook modes | `AGENTS.md` is generated on `init` but never updated on drift. | Task R-2/R-3 (generator registry) will fix this. |
-| `personalFile()` and `home` FileBase unused | `base.ts` | Defined API surface with no callers — no generator emits a personal file yet. | Needed when personal skills (`~/.claude/commands/`) are supported. |
-| `append` merge strategy unused | `shared.ts: writeGeneratedFile()` | Implemented but no generator produces a file with `mergeStrategy: 'append'`. | Will be used when package-installed rules are appended to existing files. |
-| Generator selection hardcoded in init/sync | `init.ts`, `sync.ts` | Adding a new generator requires edits in two command files. | Tasks R-2/R-3: generator registry (`getBuiltinGenerators()`) will centralise this. |
+| `sync.ts` reads `fingerprint.aiCLIs` for generator selection, not `config.targets` | `sync.ts` | If a user selected Cursor during `init` but detection didn't find it in `aiCLIs`, sync won't regenerate `.cursor/rules/project.mdc` | Task A-4 |
+| `personalFile()` and `home` FileBase have no callers | `base.ts` | API surface defined but unused — no generator emits personal files yet | Needed for personal skills (`~/.claude/commands/`) |
+| `append` merge strategy has no callers | `shared.ts` | Implemented but no generator produces a file with `mergeStrategy: 'append'` | Will be used when package rules are appended |
+| Skills/architect AI calls run in `--dry-run` | `init.ts` | Costs money to preview; output can't be shown | Task A-3 |
+| Prompt summary built independently in 3 builders | `skills-prompt.ts`, `questionnaire-builder.ts`, `architect-builder.ts` | Duplication — convention changes require 3 edits | Task A-1 |
+| `verbose` output interleaves with spinners | `init.ts` | Timing issue — verbose blocks displayed while spinner is active | Task A-6 |
+| Schema version not checked on fingerprint/config load | `cache.ts`, `config/types.ts` | Silent data loss possible on major version upgrade | Task A-4 |
+| PowerShell prompt delivery fragile | `ai-collector.ts` | Multi-line prompts may be mangled on Windows | Task I-3 |
+| No integration tests for full pipeline | `tests/` | Orchestration bugs undetectable | Task A-5 |
+| Stub commands exposed in `--help` | `add.ts`, `audit.ts`, `publish.ts` | User confusion | Task B-1 |
 
 ---
 
@@ -826,6 +967,8 @@ These are places where the current code diverges from the ideal design. Each is 
 | All schemas are Zod, types are inferred | `src/core/*/types.ts` |
 | `contentHash` excludes `repoRoot`, `generatedAt`, `contentHash` | `types.ts: HASH_EXCLUDE` |
 | Hook always exits 0 | `hook.ts`, `sync.ts: hookMode` |
-| `claude` prompts go via stdin; arg-style only for CLIs that don't support stdin | `ai-collector.ts: AICLIAdapter.invoke` |
+| `claude` prompts go via stdin; arg-style only for CLIs without stdin support | `ai-collector.ts: AICLIAdapter.invoke` |
 | `mergeSections` is pure — no filesystem access | `merge.ts` |
 | Fingerprint is the only channel from collector to generators | architecture |
+| `src/core/` never imports from `src/cli/` | module boundary |
+| AI calls 2–4 are non-fatal; only call 1 is fatal | `init.ts`, `sync.ts` |
