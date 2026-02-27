@@ -49,7 +49,7 @@ const KNOWN_CONFIG_FILES = new Set([
   '.golangci.yml', 'golangci.yml',
   'Makefile', '.github',
   // AI coding CLI config files
-  'CLAUDE.md', '.cursorrules', 'copilot-instructions.md',
+  'CLAUDE.md', '.cursorrules', 'copilot-instructions.md', 'project.mdc',
 ])
 
 /** Lock files — huge, zero analysis value, always skip for AI prompt. */

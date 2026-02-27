@@ -15,7 +15,7 @@ export function createProgram(): Command {
     .description(
       'Makes your repo readable to AI agents, then keeps it readable as the code evolves.',
     )
-    .version('0.1.0', '-v, --version')
+    .version('0.1.1', '-v, --version')
     .helpOption('-h, --help', 'Show help')
 
   registerInit(program)

@@ -83,9 +83,12 @@ cd your-project
 openskulls init
 ```
 
-OpenSkulls scans the repo with AI, detects your stack, asks two workflow questions, shows you a generation plan, then writes:
+OpenSkulls scans the repo with AI, detects your stack, asks a few workflow questions, shows you a generation plan, then writes:
 
 - `CLAUDE.md` — structured project context for Claude Code
+- `.github/copilot-instructions.md` — context for GitHub Copilot (if detected)
+- `.cursor/rules/project.mdc` — context rule for Cursor (if detected)
+- `AGENTS.md` — context for Codex (if detected)
 - `.claude/skills.md` — project-specific AI skills overview
 - `.claude/skills/` — per-skill reference documents (slash commands)
 - `.claude/commands/` — built-in workflow scripts (run-tests, commit)
@@ -281,6 +284,12 @@ Skill generation:
 
 Answers are saved to `.openskulls/config.toml` and generate a `workflow_rules` section in `CLAUDE.md` that instructs Claude on your preferences.
 
+### Parallel skill generation
+
+When you choose **parallel subagents** in the workflow setup, the skills AI call and the architect AI call run simultaneously via `Promise.allSettled` instead of sequentially. This cuts generation time roughly in half when both are enabled, at the cost of two concurrent AI sessions instead of one.
+
+Both calls are non-fatal — if either fails the other still completes and `init` continues. The setting is saved as `use_subagents = true` in `.openskulls/config.toml`.
+
 ### Architect agent
 
 When enabled, `openskulls init` (and `openskulls sync`) runs a third AI call to generate a `/architect-review` slash command tailored to your codebase. The agent acts as a domain-expert reviewer, producing:
@@ -441,9 +450,17 @@ schema_version = "1.0.0"
 name = "claude_code"
 enabled = true
 
+[[targets]]
+name = "cursor"
+enabled = true
+
 [workflow]
-auto_docs = "ask"      # "always" | "ask" | "never"
-auto_commit = "ask"    # "always" | "ask" | "never"
+auto_docs = "ask"           # "always" | "ask" | "never"
+auto_commit = "ask"         # "always" | "ask" | "never"
+architect_enabled = true
+architect_domain = ""       # leave blank to auto-detect
+architect_review = "ask"    # "always" | "ask" | "never"
+use_subagents = false       # true = run skills + architect in parallel
 
 exclude_paths = [
   "node_modules", ".git", "dist", "build",
@@ -592,8 +609,8 @@ For full module structure, data flow diagrams, config file schemas, and an exten
 
 | Version | Focus |
 |---------|-------|
-| **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code generator — workflow rules — git hook |
-| **v0.2** | Multi-tool: Cursor, Cline, Copilot — `openskulls audit` — skill registry + `openskulls add` |
+| **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code, Cursor, Copilot, Codex generators — workflow rules — parallel skill generation — git hook |
+| **v0.2** | `openskulls audit` — skill registry + `openskulls add` — architecture doc generation |
 | **v0.3** | Feedback loop: `openskulls refine` — skill composition — CI mode — plugin API |
 | **v1.0** | Platform: org-level context — agent performance metrics — multi-agent profiles |
 

@@ -13,12 +13,14 @@ import type { Generator } from './base.js'
 import { ClaudeCodeGenerator } from './claude-code.js'
 import { CopilotGenerator } from './copilot.js'
 import { CodexGenerator } from './codex.js'
+import { CursorGenerator } from './cursor.js'
 
 export function getBuiltinGenerators(): Generator[] {
   return [
     new ClaudeCodeGenerator(),
     new CopilotGenerator(),
     new CodexGenerator(),
+    new CursorGenerator(),
   ]
 }
 

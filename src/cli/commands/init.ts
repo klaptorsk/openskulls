@@ -48,6 +48,19 @@ export function registerInit(program: Command): void {
     .option('-n, --dry-run', 'Show what would be generated without writing files')
     .option('-y, --yes', 'Skip confirmation prompts')
     .option('-v, --verbose', 'Print AI prompts and raw responses')
+    .addHelpText('after', `
+Workflow setup (interactive, skipped with --yes):
+  auto-docs     Update docs after features automatically / ask / never
+  auto-commit   Commit when tasks complete automatically / ask / never
+  architect     Generate a domain-expert /architect-review skill for this repo
+  parallel      Run skills + architect in parallel (faster, uses more AI calls)
+
+Examples:
+  $ openskulls init                 interactive setup in current directory
+  $ openskulls init ./my-service    explicit path
+  $ openskulls init --dry-run       preview without writing
+  $ openskulls init --yes           skip all prompts, use defaults
+  $ openskulls init --verbose       show AI prompts and raw responses`)
     .action(async (
       path: string = '.',
       options: { dryRun?: boolean; yes?: boolean; verbose?: boolean },
@@ -62,6 +75,7 @@ export function registerInit(program: Command): void {
         claude:  'Claude Code',
         codex:   'Codex',
         copilot: 'GitHub Copilot',
+        cursor:  'Cursor',
       }
 
       // fatal() returns `never`, so TypeScript narrows adapter to AICLIAdapter
@@ -199,50 +213,73 @@ export function registerInit(program: Command): void {
       const userContext = await runInterviewer({ yes: options.yes }, aiQuestions)
       const { workflowConfig, qa } = userContext
 
-      // ── Step 5: Generate AI skills (with user context) ───────────────────
+      // ── Steps 5+6: Generate skills (and optionally architect) ────────────
+      //   Sequential by default; parallel when useSubagents + architectEnabled.
 
-      const skillsSpin = spinner('Generating project skills…').start()
       let aiSkills: AISkill[] = []
       const skillsCapture = { prompt: '', response: '' }
-      try {
-        const skillsLogger: VerboseLogger = {
-          onPrompt:   (p) => { skillsCapture.prompt = p },
-          onResponse: (r) => { skillsCapture.response = r },
-        }
-        aiSkills = await generateAISkills(fingerprint, skillsLogger, Object.keys(qa).length > 0 ? qa : undefined)
-        skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
-      } catch (err) {
-        skillsSpin.warn('Could not generate skills — skipping')
-        log.info(err instanceof Error ? err.message : String(err))
+      const archCapture   = { prompt: '', response: '' }
+      const skillsLogger: VerboseLogger = {
+        onPrompt:   (p) => { skillsCapture.prompt = p },
+        onResponse: (r) => { skillsCapture.response = r },
       }
+      const archLogger: VerboseLogger = {
+        onPrompt:   (p) => { archCapture.prompt = p },
+        onResponse: (r) => { archCapture.response = r },
+      }
+      const qaArg = Object.keys(qa).length > 0 ? qa : undefined
+
+      if (workflowConfig.useSubagents && workflowConfig.architectEnabled) {
+        // ── Parallel path ────────────────────────────────────────────────────
+        const spin = spinner('Generating skills and architect skill in parallel…').start()
+        const [skillsResult, archResult] = await Promise.allSettled([
+          generateAISkills(fingerprint, skillsLogger, qaArg),
+          generateArchitectSkill(fingerprint, workflowConfig, archLogger, qaArg),
+        ])
+        const skillsOk = skillsResult.status === 'fulfilled'
+        const archOk   = archResult.status === 'fulfilled'
+        if (skillsOk)  aiSkills = skillsResult.value
+        if (archOk)    aiSkills = [archResult.value, ...aiSkills]
+        if (skillsOk && archOk) {
+          spin.succeed(`Generated ${aiSkills.length} skills in parallel`)
+        } else if (skillsResult.status === 'rejected' && archResult.status === 'rejected') {
+          spin.warn('Could not generate skills or architect skill — skipping')
+          log.info(skillsResult.reason instanceof Error ? skillsResult.reason.message : String(skillsResult.reason))
+        } else if (skillsResult.status === 'rejected') {
+          spin.warn(`Generated ${aiSkills.length} skill(s) — skills generation failed`)
+          log.info(skillsResult.reason instanceof Error ? skillsResult.reason.message : String(skillsResult.reason))
+        } else if (archResult.status === 'rejected') {
+          spin.warn(`Generated ${aiSkills.length} skill(s) — architect skill failed`)
+          log.info(archResult.reason instanceof Error ? archResult.reason.message : String(archResult.reason))
+        }
+      } else {
+        // ── Sequential path ──────────────────────────────────────────────────
+        const skillsSpin = spinner('Generating project skills…').start()
+        try {
+          aiSkills = await generateAISkills(fingerprint, skillsLogger, qaArg)
+          skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
+        } catch (err) {
+          skillsSpin.warn('Could not generate skills — skipping')
+          log.info(err instanceof Error ? err.message : String(err))
+        }
+
+        if (workflowConfig.architectEnabled) {
+          const archSpin = spinner('Generating architect skill…').start()
+          try {
+            const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger, qaArg)
+            aiSkills = [architectSkill, ...aiSkills]
+            archSpin.succeed('Generated architect skill')
+          } catch (err) {
+            archSpin.warn('Could not generate architect skill — skipping')
+            log.info(err instanceof Error ? err.message : String(err))
+          }
+        }
+      }
+
       if (options.verbose) {
         verboseBlock('Skills prompt', skillsCapture.prompt)
         verboseBlock('Skills response', skillsCapture.response)
-      }
-
-      // ── Step 6: Architect skill (if enabled, with user context) ──────────
-
-      if (workflowConfig.architectEnabled) {
-        const archSpin = spinner('Generating architect skill…').start()
-        const archCapture = { prompt: '', response: '' }
-        try {
-          const archLogger: VerboseLogger = {
-            onPrompt:   (p) => { archCapture.prompt = p },
-            onResponse: (r) => { archCapture.response = r },
-          }
-          const architectSkill = await generateArchitectSkill(
-            fingerprint,
-            workflowConfig,
-            archLogger,
-            Object.keys(qa).length > 0 ? qa : undefined,
-          )
-          aiSkills = [architectSkill, ...aiSkills]
-          archSpin.succeed('Generated architect skill')
-        } catch (err) {
-          archSpin.warn('Could not generate architect skill — skipping')
-          log.info(err instanceof Error ? err.message : String(err))
-        }
-        if (options.verbose) {
+        if (workflowConfig.architectEnabled) {
           verboseBlock('Architect prompt', archCapture.prompt)
           verboseBlock('Architect response', archCapture.response)
         }
@@ -268,6 +305,7 @@ export function registerInit(program: Command): void {
         claude:  'claude_code',
         codex:   'codex',
         copilot: 'copilot',
+        cursor:  'cursor',
       }
 
       // Union of: the active engine + any AI tools already configured in the repo
@@ -278,7 +316,6 @@ export function registerInit(program: Command): void {
 
       const generatedFiles: GeneratedFile[] = selectGenerators(toolsToGenerate)
         .flatMap((g) => g.generate(generatorInput))
-      // cursor: detected in repo signals but no generator yet
 
       const detectedTools = [...toolsToGenerate]
 
@@ -355,7 +392,7 @@ export function registerInit(program: Command): void {
 
 // ─── Config writer ────────────────────────────────────────────────────────────
 
-const ALL_TARGETS = ['claude_code', 'codex', 'copilot'] as const
+const ALL_TARGETS = ['claude_code', 'codex', 'copilot', 'cursor'] as const
 
 async function saveConfig(
   repoRoot: string,

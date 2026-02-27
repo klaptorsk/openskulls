@@ -1,6 +1,6 @@
 {
   "name": "openskulls",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
   "type": "module",
   "bin": {
@@ -13,7 +13,7 @@
     "uninstall.sh"
   ],
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "rm -rf dist && tsc --project tsconfig.json && chmod +x dist/index.js",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
