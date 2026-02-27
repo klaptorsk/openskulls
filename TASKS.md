@@ -1,6 +1,6 @@
 # OpenSkulls — Task Tracker
 
-> Updated: 2026-02-24
+> Updated: 2026-02-27
 
 ---
 
@@ -16,8 +16,8 @@
 |---|---|---|
 | I-1 | Let the underlying AI text prompt output be visible by going in verbose by clicking ctrl-o similar to claude, we should be able to see it | ✅ Done |
 | R-1 | Generator refactor — extract shared helpers (`STYLE_LABELS`, `isConventionalCommits()`, `buildWorkflowRules()`) from both generators into `base.ts` or a new `shared.ts` | ✅ Done |
-| R-2 | Generator registry — add `src/core/generators/registry.ts` with `getBuiltinGenerators()`, handling always-on vs detection-based generators | ⬜ Pending |
-| R-3 | Wire registry into CLI — replace hardcoded generator instantiation in `init.ts` and `sync.ts` (3 call sites) with registry lookup | ⬜ Pending |
+| R-2 | Generator registry — add `src/core/generators/registry.ts` with `getBuiltinGenerators()`, handling always-on vs detection-based generators | ✅ Done |
+| R-3 | Wire registry into CLI — replace hardcoded generator instantiation in `init.ts` and `sync.ts` (3 call sites) with registry lookup | ✅ Done |
 | 6 | Interviewer — superseded by T-6 (AI-driven questionnaire). Static workflow questions (auto-docs, auto-commit, architect) kept; AI adds domain-specific questions on top. | 🔄 Superseded by T-6 |
 | 7 | Dependency drift check + `openskulls audit` command | ⬜ Pending |
 | 8 | `openskulls add` — local packages only (no registry yet) | ⬜ Pending |
@@ -27,6 +27,10 @@
 | 11 | UI polish — align style with https://github.com/openclaw/openclaw | ⬜ Pending |
 | 12 | `openskulls init` should offer to create a `TASKS.md` task tracker in the destination project with relevant continous update as we code along| ⬜ Pending |
 | 13 | Strenghten the promt for generating skills, also see if there is any exisisting skills from this or another source - ask for repo | ⬜ Pending |
+| B-1 | Remove or hide stub commands before beta — `audit`, `add`, `publish` are registered in `--help` but do nothing; either implement stubs as coming-soon notices outside the command list or remove them until real | ✅ Done |
+| B-2 | Remove hardcoded `registry.openskulls.dev` default — `GlobalConfig.registryUrl` defaults to a non-existent domain; strip the field or leave it blank until a registry exists | ✅ Done |
+| B-3 | Document verbose mode in README — ctrl-o AI prompt visibility (task I-1) is implemented but not mentioned anywhere in the docs | ✅ Done |
+| B-4 | Document AI questionnaire in README — the T-6 AI-driven Q&A step during `init` is not explained in the README init flow section | ✅ Done |
 
 ---
 

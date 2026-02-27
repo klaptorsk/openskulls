@@ -3,10 +3,7 @@
  */
 
 import { Command } from 'commander'
-import { registerAdd } from './commands/add.js'
-import { registerAudit } from './commands/audit.js'
 import { registerInit } from './commands/init.js'
-import { registerPublish } from './commands/publish.js'
 import { registerSync } from './commands/sync.js'
 import { registerUninstall } from './commands/uninstall.js'
 
@@ -23,9 +20,6 @@ export function createProgram(): Command {
 
   registerInit(program)
   registerSync(program)
-  registerAudit(program)
-  registerAdd(program)
-  registerPublish(program)
   registerUninstall(program)
 
   return program

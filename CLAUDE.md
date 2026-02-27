@@ -83,17 +83,31 @@ Primary language: **TypeScript**.
 | Path | Purpose |
 |---|---|
 | `src/core/fingerprint/types.ts` | Zod schemas, `createFingerprint()`, `hasDrifted()` |
-| `src/core/fingerprint/collector.ts` | `FingerprintCollector` — scans repo, runs analyzers |
+| `src/core/fingerprint/ai-collector.ts` | `AIFingerprintCollector`, `detectAICLI()`, `invokeAICLI()`, `detectAICLIs()` |
+| `src/core/fingerprint/prompt-builder.ts` | `buildAnalysisPrompt()` — pure, builds AI analysis prompt |
+| `src/core/fingerprint/questionnaire-builder.ts` | `generateQuestionnaire()`, `buildQuestionnairePrompt()` |
+| `src/core/fingerprint/skills-builder.ts` | `generateAISkills()`, `AISkill` Zod schema |
+| `src/core/fingerprint/skills-prompt.ts` | `buildSkillsPrompt()` — pure, no I/O |
+| `src/core/fingerprint/architect-builder.ts` | `generateArchitectSkill()`, `buildArchitectPrompt()` |
 | `src/core/fingerprint/cache.ts` | `loadFingerprint()`, `saveFingerprint()` |
-| `src/core/analyzers/base.ts` | `AnalyzerContext`, `AnalyzerResult`, `BaseAnalyzer` |
-| `src/core/analyzers/registry.ts` | `getBuiltinAnalyzers()` — hardcoded list for v0.1 |
 | `src/core/generators/base.ts` | `GeneratedFile`, `BaseGenerator`, `repoFile()`, `personalFile()` |
-| `src/core/generators/claude-code.ts` | `ClaudeCodeGenerator` — renders CLAUDE.md via Handlebars |
+| `src/core/generators/claude-code.ts` | `ClaudeCodeGenerator` — renders CLAUDE.md via Handlebars, emits skills |
+| `src/core/generators/copilot.ts` | `CopilotGenerator` — emits `.github/copilot-instructions.md` |
+| `src/core/generators/codex.ts` | `CodexGenerator` — emits `AGENTS.md` |
 | `src/core/generators/merge.ts` | `mergeSections()` — pure section merge, no I/O |
-| `src/cli/commands/init.ts` | Full init flow: analyse → signals → plan → confirm → write |
+| `src/core/generators/shared.ts` | `STYLE_LABELS`, `isConventionalCommits()`, `buildWorkflowRuleLines()` |
+| `src/cli/commands/init.ts` | Full init flow: detect engine → analyse → questionnaire → interview → skills → generate → write |
+| `src/cli/commands/sync.ts` | Sync flow: interactive mode + non-blocking hook mode |
+| `src/cli/commands/hook.ts` | `installGitHook()`, `shouldTriggerSync()`, `matchesTriggerPattern()` |
+| `src/cli/commands/shared.ts` | `writeGeneratedFile()` — applies merge strategy, shared by init + sync |
+| `src/cli/commands/interviewer.ts` | `runInterviewer()` — static workflow Qs (Part A) + AI Qs (Part B) |
 | `src/cli/ui/console.ts` | `log.*`, `panel()`, `table()`, `spinner()`, `fatal()` |
 | `templates/claude-code/CLAUDE.md.hbs` | Handlebars template with tagged sections |
-| `tests/helpers/index.ts` | `makeContext(files)` test factory |
+| `templates/prompts/analysis.md.hbs` | AI repo analysis prompt template |
+| `templates/prompts/skills.md.hbs` | AI skills generation prompt template |
+| `templates/prompts/questionnaire.md.hbs` | AI questionnaire prompt template |
+| `templates/prompts/architect.md.hbs` | AI architect skill prompt template |
+| `tests/helpers/index.ts` | `makeContext(files)` test factory (creates real temp dirs) |
 
 ---
 
@@ -102,12 +116,17 @@ Primary language: **TypeScript**.
 | Step | Task | Status |
 |---|---|---|
 | 1 | Data models — RepoFingerprint, SkullPackage, configs | ✅ |
-| 2 | FingerprintCollector + language analyzers (py, js, ts, go) | ✅ |
-| 3 | Claude Code generator — CLAUDE.md + .claude/commands/ + settings.json | ✅ |
-| 4 | Wire `openskulls init` — collector → generator → writer + merge | ✅ |
-| 5 | Interviewer — 4-question init flow, save to config.toml | ⬜ |
-| 6 | Git hook installer + non-blocking `openskulls sync` | ⬜ |
-| 7 | Dependency drift check + `openskulls audit` | ⬜ |
+| 2 | AI-powered fingerprint collection — `AIFingerprintCollector` + `buildAnalysisPrompt` | ✅ |
+| 3 | Claude Code / Copilot / Codex generators — CLAUDE.md, AGENTS.md, copilot-instructions.md | ✅ |
+| 4 | Wire `openskulls init` — collect → questionnaire → interview → skills → generate → write | ✅ |
+| 5 | Interviewer — static workflow Qs + AI-generated contextual Qs | ✅ |
+| 6 | Git hook installer + non-blocking `openskulls sync` (interactive + hook modes) | ✅ |
+| T-AI | AI-generated skills — second AI call, emits `.claude/skills/` + per-skill SKILL.md | ✅ |
+| T-6 | Architect skill — optional third AI call, domain-expert `/architect-review` command | ✅ |
+| R-1 | Generator refactor — extract shared helpers into `generators/shared.ts` | ✅ |
+| R-2 | Generator registry — `getBuiltinGenerators()` to replace hardcoded init/sync branching | ⬜ |
+| R-3 | Wire registry into CLI — replace hardcoded generator instantiation | ⬜ |
+| 7 | Dependency drift check + `openskulls audit` command | ⬜ |
 | 8 | `openskulls add` — local packages only | ⬜ |
 
 <!-- openskulls:section:workflow_rules -->

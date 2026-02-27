@@ -230,21 +230,25 @@ openskulls init                 # current directory
 openskulls init ./my-service    # explicit path
 openskulls init --dry-run       # preview without writing
 openskulls init --yes           # skip confirmation prompts
+openskulls init --verbose       # show AI prompts and raw responses
 ```
 
 **Init flow:**
 
 1. **Analyse repo** — scans file tree, reads config files, invokes `claude -p` for AI analysis
-2. **Generate project skills** — second AI call produces repo-specific slash commands (non-fatal)
-3. **Show detected signals** — languages, frameworks, testing, linting in a table
-4. **Workflow setup** — questions to configure how Claude works in this repo (skipped with `--yes`)
-5. **Generate architect skill** — third AI call generates a domain-expert architect agent (if enabled)
-6. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
-7. **Show generation plan** — lists every file that will be created or updated
-8. **Confirm** — nothing is written until you approve (skipped with `--yes`)
-9. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
-10. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
-11. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
+2. **Show detected signals** — languages, frameworks, testing, linting in a table
+3. **Generate contextual questions** — second AI call produces repo-specific questions based on the fingerprint (non-fatal, skipped with `--yes`)
+4. **Workflow setup** — static questions + AI-generated contextual questions to configure how Claude works in this repo (skipped with `--yes`)
+5. **Generate project skills** — third AI call produces repo-specific slash commands, using your answers as context (non-fatal)
+6. **Generate architect skill** — optional AI call that generates a domain-expert architect agent (if enabled in step 4)
+7. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
+8. **Show generation plan** — lists every file that will be created or updated
+9. **Confirm** — nothing is written until you approve (skipped with `--yes`)
+10. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
+11. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
+12. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
+
+**Verbose mode** (`--verbose` / `-v`): prints the full AI prompt and raw JSON response for every AI call — analysis, questionnaire, skills, and architect. Useful for debugging or understanding what was sent to the model.
 
 **Workflow questions** (step 4):
 
@@ -454,7 +458,6 @@ exclude_paths = [
 ```json
 {
   "schemaVersion": "1.0.0",
-  "registryUrl": "https://registry.openskulls.dev",
   "preferredTools": ["claude_code"],
   "developerProfile": {
     "name": "",
@@ -580,6 +583,8 @@ npm test
 - **Stdin over CLI args** — AI prompts are written to `child.stdin` to avoid `ARG_MAX` limits on large repos.
 - **Content-addressed fingerprints** — SHA-256 over content fields only (no paths, no timestamps). Same codebase = same hash on any machine, in any directory.
 - **Non-blocking hooks** — the post-commit hook always exits 0. A sync failure or analysis error never interrupts a developer's commit.
+
+For full module structure, data flow diagrams, config file schemas, and an extension guide, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 

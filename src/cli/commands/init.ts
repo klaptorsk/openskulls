@@ -29,10 +29,8 @@ import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
 import { generateQuestionnaire, type AIQuestion } from '../../core/fingerprint/questionnaire-builder.js'
-import { ClaudeCodeGenerator } from '../../core/generators/claude-code.js'
-import { CopilotGenerator } from '../../core/generators/copilot.js'
-import { CodexGenerator } from '../../core/generators/codex.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
+import { selectGenerators } from '../../core/generators/registry.js'
 import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
 import {
   banner, divider, fatal, fileList, heading, log, spinner, subheading, table, verboseBlock,
@@ -278,17 +276,8 @@ export function registerInit(program: Command): void {
         ...fingerprint.aiCLIs.map((a) => a.tool),
       ])
 
-      const generatedFiles: GeneratedFile[] = []
-
-      if (toolsToGenerate.has('claude_code')) {
-        generatedFiles.push(...new ClaudeCodeGenerator().generate(generatorInput))
-      }
-      if (toolsToGenerate.has('codex')) {
-        generatedFiles.push(...new CodexGenerator().generate(generatorInput))
-      }
-      if (toolsToGenerate.has('copilot')) {
-        generatedFiles.push(...new CopilotGenerator().generate(generatorInput))
-      }
+      const generatedFiles: GeneratedFile[] = selectGenerators(toolsToGenerate)
+        .flatMap((g) => g.generate(generatorInput))
       // cursor: detected in repo signals but no generator yet
 
       const detectedTools = [...toolsToGenerate]

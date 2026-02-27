@@ -105,7 +105,7 @@ export type DeveloperProfile = z.infer<typeof DeveloperProfile>
 
 export const GlobalConfig = z.object({
   schemaVersion: z.string().default('1.0.0'),
-  registryUrl: z.string().default('https://registry.openskulls.dev'),
+  registryUrl: z.string().optional(),
   authToken: z.string().optional(),
   preferredTools: z.array(z.string()).default(['claude_code']),
   globalPackages: z.array(PackageDependency).default([]),
