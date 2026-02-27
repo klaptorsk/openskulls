@@ -1,6 +1,6 @@
 {
   "name": "openskulls",
-  "version": "0.1.4",
+  "version": "0.1.8",
   "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
   "type": "module",
   "bin": {
@@ -23,6 +23,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@clack/prompts": "^1.0.1",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "handlebars": "^4.7.8",

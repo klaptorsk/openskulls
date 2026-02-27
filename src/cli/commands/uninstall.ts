@@ -12,7 +12,7 @@
  * The binary itself is NOT removed — use the uninstall.sh script for that.
  */
 
-import { createInterface } from 'node:readline/promises'
+import { confirm, isCancel, cancel } from '@clack/prompts'
 import { existsSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -79,13 +79,8 @@ export function registerUninstall(program: Command): void {
       // ── Confirm ──────────────────────────────────────────────────────────
 
       if (!options.yes) {
-        const rl = createInterface({ input: process.stdin, output: process.stdout })
-        const answer = await rl.question('Proceed? [y/N] ')
-        rl.close()
-        if (answer.trim().toLowerCase() !== 'y') {
-          log.info('Aborted.')
-          process.exit(0)
-        }
+        const go = await confirm({ message: 'Proceed with removal?' })
+        if (isCancel(go) || go === false) { cancel('Aborted.'); process.exit(0) }
       }
 
       // ── Execute ──────────────────────────────────────────────────────────

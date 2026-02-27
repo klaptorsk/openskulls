@@ -280,4 +280,14 @@ describe('stripJsonFences', () => {
     const input = '```json{"a":1}\n```'
     expect(stripJsonFences(input)).toBe('{"a":1}')
   })
+
+  it('extracts JSON from natural-language preamble (copilot-style response)', () => {
+    const input = 'it looks like this is a TypeScript project. Here is the analysis:\n{"a":1}'
+    expect(stripJsonFences(input)).toBe('{"a":1}')
+  })
+
+  it('extracts JSON when prose appears after the object too', () => {
+    const input = 'Sure! Here you go:\n{"a":1}\nLet me know if you need anything else.'
+    expect(stripJsonFences(input)).toBe('{"a":1}')
+  })
 })

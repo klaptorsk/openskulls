@@ -69,20 +69,26 @@ const MAX_CONFIG_FILE_BYTES = 32_768
 
 /**
  * Describes how to invoke an AI CLI.
- *   stdin — prompt written to child.stdin (e.g. `claude -p -`)
- *   arg   — prompt passed as the argument to -p (e.g. `codex -p "..."`)
+ *   invoke — 'stdin': prompt written to child.stdin (e.g. `claude -p -`)
+ *            'arg':   prompt passed as the -p argument (e.g. `copilot -p "…"`)
+ *   shell  — how to spawn the command:
+ *            false (default): direct binary lookup, no shell
+ *            true:            cmd.exe on Windows, /bin/sh on Unix
+ *            'powershell':    powershell.exe (Windows only); prompt passed via
+ *                             env var to avoid quoting/length issues
  */
 export interface AICLIAdapter {
   command: string
   invoke: 'stdin' | 'arg'
   version?: string
+  shell?: boolean | 'powershell'
 }
 
 /** AI CLI commands to search for, in priority order. */
 const AI_CLI_CANDIDATES: AICLIAdapter[] = [
   { command: 'claude',  invoke: 'stdin' },
   { command: 'codex',   invoke: 'arg'   },
-  { command: 'copilot', invoke: 'arg'   },
+  { command: 'copilot', invoke: 'stdin'   },
 ]
 
 // ─── AI Analysis Response schema ──────────────────────────────────────────────
@@ -124,6 +130,7 @@ export class AIFingerprintCollector {
     repoRoot: string,
     config?: Partial<ProjectConfig>,
     logger?: VerboseLogger,
+    adapter?: AICLIAdapter,
   ): Promise<RepoFingerprint> {
     const excludeSet = new Set([
       ...DEFAULT_EXCLUDE,
@@ -139,8 +146,8 @@ export class AIFingerprintCollector {
     // Step 3: Detect AI CLIs from file presence (pure logic, runs before AI call)
     const aiCLIs = detectAICLIs(fileTree, configFiles)
 
-    // Step 4: Find AI CLI in PATH
-    const cliCommand = await detectAICLI()
+    // Step 4: Find AI CLI in PATH (use provided adapter or auto-detect)
+    const cliCommand = adapter ?? await detectAICLI()
 
     // Step 5: Build prompt and invoke AI
     const prompt = buildAnalysisPrompt(basename(repoRoot), fileTree, configContents)
@@ -192,29 +199,57 @@ export class AIFingerprintCollector {
 const WIN_CMD_SUFFIXES = process.platform === 'win32' ? ['.cmd', ''] : ['']
 
 /**
- * Run `command --version` and return the first line of output.
- * Checks both stdout and stderr (some CLIs write version to stderr).
- * Resolves with the version string on exit code 0, rejects otherwise.
+ * Try running `cmd [extraArgs] --version` using the specified shell mode.
+ * Resolves with the first line of output (may be empty — some CLIs don't
+ * implement --version). Rejects only on ENOENT/EACCES (command not found).
  */
-async function trySpawnVersion(cmd: string): Promise<string> {
+function spawnVersion(
+  cmd: string,
+  extraArgs: string[],
+  shellMode: boolean | 'powershell',
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, ['--version'])
-    let out = ''
+    const versionArgs = [...extraArgs, '--version']
+    const child =
+      shellMode === 'powershell'
+        ? spawn('powershell.exe', ['-NoProfile', '-Command', [cmd, ...versionArgs].join(' ')])
+        : spawn(cmd, versionArgs, { shell: shellMode })
 
+    let out = ''
     child.stdout.on('data', (d: Buffer) => { out += d.toString() })
     child.stderr.on('data', (d: Buffer) => { out += d.toString() })
-
     child.on('error', reject)
-
-    child.on('close', (code: number | null) => {
-      const firstLine = out.trim().split('\n')[0]?.trim() ?? ''
-      if (code === 0 && firstLine) {
-        resolve(firstLine)
-      } else {
-        reject(new Error(`${cmd} --version exited ${String(code)}`))
-      }
-    })
+    child.on('close', () => { resolve(out.trim().split('\n')[0]?.trim() ?? '') })
   })
+}
+
+/**
+ * Probe whether a command is available, trying progressively more permissive
+ * shell modes until one succeeds:
+ *   1. Direct binary lookup (shell: false)
+ *   2. cmd.exe on Windows / /bin/sh on Unix (shell: true)
+ *   3. powershell.exe (Windows only) — catches commands that are only
+ *      accessible from PowerShell (PS modules, PS profile additions, etc.)
+ *
+ * Returns { version, shell } so invokeAICLI can use the same execution path.
+ */
+async function trySpawnVersion(
+  cmd: string,
+  extraArgs: string[] = [],
+): Promise<{ version: string; shell: boolean | 'powershell' }> {
+  const modes: Array<boolean | 'powershell'> = [false, true]
+  if (process.platform === 'win32') modes.push('powershell')
+
+  for (const mode of modes) {
+    try {
+      const version = await spawnVersion(cmd, extraArgs, mode)
+      return { version, shell: mode }
+    } catch {
+      // try next mode
+    }
+  }
+
+  throw new Error(`${cmd} not found`)
 }
 
 export async function detectAICLI(): Promise<AICLIAdapter> {
@@ -222,18 +257,48 @@ export async function detectAICLI(): Promise<AICLIAdapter> {
     for (const suffix of WIN_CMD_SUFFIXES) {
       const cmd = candidate.command + suffix
       try {
-        const version = await trySpawnVersion(cmd)
-        // Store the resolved command (e.g. 'claude.cmd') so invokeAICLI uses the same path
-        return { ...candidate, command: cmd, version }
+        const { version, shell } = await trySpawnVersion(cmd)
+        return { ...candidate, command: cmd, version, shell }
       } catch {
         // try next suffix or next candidate
       }
     }
   }
 
-  throw new Error(
-    'No AI CLI found in PATH.\nInstall Claude Code (https://claude.ai/code), Codex, or Copilot.',
-  )
+  throw new Error('Install Claude Code, OpenAI Codex, or GitHub Copilot.')
+}
+
+/** Maps tool IDs (from AICLISignal / generator registry) to CLI command names. */
+const TOOL_TO_CLI: Readonly<Record<string, string>> = {
+  claude_code: 'claude',
+  copilot:     'copilot',
+  codex:       'codex',
+  // cursor has no invocable CLI
+}
+
+/**
+ * Like detectAICLI() but only tries candidates whose tool ID appears in
+ * toolIds (in the priority order of AI_CLI_CANDIDATES).
+ * Falls back to detectAICLI() if none of the selected tools are available.
+ */
+export async function detectAICLIFor(toolIds: string[]): Promise<AICLIAdapter> {
+  const wantedCmds = new Set(toolIds.flatMap((id) => (TOOL_TO_CLI[id] ? [TOOL_TO_CLI[id]] : [])))
+  const filtered = AI_CLI_CANDIDATES.filter((c) => wantedCmds.has(c.command))
+
+  for (const candidate of filtered) {
+    for (const suffix of WIN_CMD_SUFFIXES) {
+      const cmd = candidate.command + suffix
+      try {
+        const { version, shell } = await trySpawnVersion(cmd)
+        return { ...candidate, command: cmd, version, shell }
+      } catch {
+        // try next
+      }
+    }
+  }
+
+  // None of the selected tools found in PATH — fall back to any available CLI
+  return detectAICLI()
 }
 
 // ─── AI CLI invocation ────────────────────────────────────────────────────────
@@ -247,10 +312,25 @@ export async function invokeAICLI(
   logger?.onPrompt(prompt)
 
   return new Promise((resolve, reject) => {
-    // stdin style: `claude -p -`  — prompt written to child.stdin
-    // arg style:   `codex -p "…"` — prompt passed as the -p argument
-    const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
-    const child = spawn(adapter.command, args)
+    // Spawn the child using the shell mode detected during CLI discovery.
+    //
+    // powershell mode: prompt is passed via an env var (__OPENSKULLS_PROMPT)
+    //   so PowerShell expands it cleanly without quoting or cmd-line length issues.
+    //   The PS command reads:  copilot -p $env:__OPENSKULLS_PROMPT
+    //
+    // stdin mode: `claude -p -` — prompt is written to child.stdin after spawn.
+    // arg mode:   `codex -p "…"` — prompt is the -p argument (default shell escape).
+    let child: ReturnType<typeof spawn>
+    if (adapter.shell === 'powershell') {
+      const psCmd = `${adapter.command} -p $env:__OPENSKULLS_PROMPT`
+      child = spawn('powershell.exe', ['-NoProfile', '-Command', psCmd], {
+        env: { ...process.env, __OPENSKULLS_PROMPT: prompt },
+      })
+    } else {
+      const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
+      child = spawn(adapter.command, args, { shell: adapter.shell === true })
+    }
+
     let out = ''
     let err = ''
 
@@ -259,10 +339,10 @@ export async function invokeAICLI(
       reject(new Error(`AI CLI timed out after ${timeoutMs}ms`))
     }, timeoutMs)
 
-    child.stdout.on('data', (d: Buffer) => { out += d.toString() })
-    child.stderr.on('data', (d: Buffer) => { err += d.toString() })
+    child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+    child.stderr?.on('data', (d: Buffer) => { err += d.toString() })
 
-    child.on('error', (e: Error) => {
+    child.on('error', (e: Error) => { 
       clearTimeout(timer)
       reject(e)
     })
@@ -277,10 +357,10 @@ export async function invokeAICLI(
       }
     })
 
-    if (adapter.invoke === 'stdin') {
-      child.stdin.on('error', () => { /* ignore broken pipe */ })
-      child.stdin.write(prompt)
-      child.stdin.end()
+    if (adapter.invoke === 'stdin' && adapter.shell !== 'powershell') {
+      child.stdin?.on('error', () => { /* ignore broken pipe */ })
+      child.stdin?.write(prompt)
+      child.stdin?.end()
     }
   })
 }
@@ -321,6 +401,14 @@ export function detectAICLIs(
     if (fileTree.some((f) => f.startsWith('.cursor/'))) evidence.push('.cursor/ directory found')
     if (evidence.length > 0) signals.push({ tool: 'cursor', confidence: 'high', evidence })
   }
+  // Codex - project.mdc file containing "codex" (not an official marker, but better than nothing)
+  {
+    const evidence: string[] = []
+    const mdcPath = configFiles.get('project.mdc')
+    if (mdcPath?.includes('codex')) evidence.push('project.mdc mentioning codex found')
+    if (evidence.length > 0) signals.push({ tool: 'codex', confidence: 'medium', evidence })
+      
+   }  
 
   return signals
 }
@@ -333,7 +421,16 @@ export function detectAICLIs(
  * Exported for testing.
  */
 export function stripJsonFences(text: string): string {
-  return text.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '').trim()
+  const stripped = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```\s*$/, '').trim()
+  if (stripped.startsWith('{')) return stripped
+
+  // Some AI CLIs (e.g. copilot) prepend natural-language commentary before the
+  // JSON object. Fall back to extracting the outermost { … } block.
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end > start) return text.slice(start, end + 1)
+
+  return stripped // will fail JSON.parse with a sensible error
 }
 
 // ─── File tree scanner ────────────────────────────────────────────────────────

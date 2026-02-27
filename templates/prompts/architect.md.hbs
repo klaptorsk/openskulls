@@ -35,10 +35,10 @@ The JSON must match this schema exactly:
 Content rules for the "content" field:
 1. `# Architect Review` — H1 heading
 2. One sentence describing this agent's role and domain expertise for THIS specific project (reference the actual tech stack)
-3. `## Architectural Principles` — 4–8 non-negotiable principles specific to this codebase (file layout rules, layer constraints, module boundaries, naming, type safety conventions, etc.)
-4. `## Review Checklist` — a markdown checklist of 6–10 items to verify when reviewing any new feature or change. Make them specific to the detected stack and architecture.
-5. `## Anti-Patterns` — 3–5 specific anti-patterns to flag for this stack (e.g. God objects in OOP projects, mixing concerns in CLI commands, skipping Zod validation on external data, etc.)
-6. `## Common Patterns` — 2–4 canonical patterns this project uses (reference real file paths and code structure from the project context)
+3. `## Architectural Principles` — 4-8 non-negotiable principles specific to this codebase (file layout rules, layer constraints, module boundaries, naming, type safety conventions, etc.)
+4. `## Review Checklist` — a markdown checklist of 6-10 items to verify when reviewing any new feature or change. Make them specific to the detected stack and architecture.
+5. `## Anti-Patterns` — 3-5 specific anti-patterns to flag for this stack (e.g. God objects in OOP projects, mixing concerns in CLI commands, skipping Zod validation on external data, etc.)
+6. `## Common Patterns` — 2-4 canonical patterns this project uses (reference real file paths and code structure from the project context)
 {{#if (eq architectReview "always")}}
 7. `## Workflow` — Include this paragraph verbatim: "Run /architect-review after every feature addition or significant change. This is a required step in the development workflow for this project."
 {{/if}}

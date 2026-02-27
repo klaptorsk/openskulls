@@ -98,7 +98,7 @@ export const GitSignal = z.object({
 export type GitSignal = z.infer<typeof GitSignal>
 
 export const AICLISignal = z.object({
-  tool: z.enum(['claude_code', 'copilot', 'cursor']),
+  tool: z.enum(['claude_code', 'copilot', 'cursor', 'codex']),
   confidence: Confidence,
   evidence: z.array(z.string()).default([]),
 })

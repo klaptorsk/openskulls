@@ -255,32 +255,17 @@ openskulls init --verbose       # show AI prompts and raw responses
 
 **Workflow questions** (step 4):
 
-```
-Auto-documentation — when a feature is added or updated:
-  1  Update docs automatically
-  2  Ask me first  ← default
-  3  I'll handle docs myself
+All prompts use interactive arrow-key selectors — use `↑`/`↓` to navigate, `Space` to toggle (multi-select), `Enter` to confirm. Cancel any prompt with `Ctrl+C`.
 
-Auto-commit — when a task is complete:
-  1  Ask me first  ← default
-  2  Commit automatically
-  3  Never — I'll commit manually
-
-Architect agent — generate a domain expert for this project:
-  1  Yes, include an architect agent  ← default
-  2  No, skip
-
-  (If yes) Primary domain or focus: [leave blank to auto-detect]
-
-  When should the architect review new features:
-  1  Ask me first  ← default
-  2  Always (add to workflow rules automatically)
-  3  Only when I invoke /architect-review
-
-Skill generation:
-  1  Single AI call  ← default
-  2  Parallel subagents (faster, uses more AI calls)
-```
+| Question | Options | Default |
+|---|---|---|
+| AI tool(s) to configure | Claude Code, GitHub Copilot, OpenAI Codex, Cursor (multi-select) | Claude Code |
+| Auto-documentation | Ask me first / Update automatically / Handle myself | Ask me first |
+| Auto-commit | Ask me first / Commit automatically / Never | Ask me first |
+| Architect agent | Yes / No | Yes |
+| (If yes) Architect domain | Free text | auto-detect |
+| Architect review trigger | Ask me first / Always / Only on `/architect-review` | Ask me first |
+| Skill generation | Single AI call / Parallel subagents | Single AI call |
 
 Answers are saved to `.openskulls/config.toml` and generate a `workflow_rules` section in `CLAUDE.md` that instructs Claude on your preferences.
 

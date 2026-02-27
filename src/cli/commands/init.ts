@@ -16,7 +16,8 @@
  * 12. Install git hook
  */
 
-import { createInterface } from 'node:readline/promises'
+import { intro, outro, confirm, isCancel, cancel } from '@clack/prompts'
+import { circleMultiselect } from '../ui/prompts.js'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -24,7 +25,7 @@ import { dirname, join, resolve } from 'node:path'
 import { stringify as tomlStringify } from 'smol-toml'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { AIFingerprintCollector, detectAICLI, type AICLIAdapter, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
+import { AIFingerprintCollector, detectAICLIFor, type AICLIAdapter, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
@@ -33,7 +34,7 @@ import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.
 import { selectGenerators } from '../../core/generators/registry.js'
 import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
 import {
-  banner, divider, fatal, fileList, heading, log, spinner, subheading, table, verboseBlock,
+  printBanner, divider, fatal, fileList, heading, log, spinner, subheading, table, verboseBlock,
 } from '../ui/console.js'
 import { writeGeneratedFile } from './shared.js'
 import { installGitHook } from './hook.js'
@@ -56,20 +57,21 @@ Workflow setup (interactive, skipped with --yes):
   parallel      Run skills + architect in parallel (faster, uses more AI calls)
 
 Examples:
-  $ openskulls init                 interactive setup in current directory
-  $ openskulls init ./my-service    explicit path
-  $ openskulls init --dry-run       preview without writing
-  $ openskulls init --yes           skip all prompts, use defaults
-  $ openskulls init --verbose       show AI prompts and raw responses`)
+  $ openskulls init                      interactive setup in current directory
+  $ openskulls init ./my-service         explicit path
+  $ openskulls init --dry-run            preview without writing
+  $ openskulls init --yes                skip all prompts, use defaults
+  $ openskulls init --verbose            show AI prompts and raw responses`)
     .action(async (
       path: string = '.',
       options: { dryRun?: boolean; yes?: boolean; verbose?: boolean },
     ) => {
       const repoRoot = resolve(path)
 
-      banner('init', repoRoot)
+      printBanner()
+      intro(`init  ${chalk.dim(repoRoot)}`)
 
-      // ── Step 0: Detect AI engine ──────────────────────────────────────────
+      // ── Step 0: Select AI engine ──────────────────────────────────────────
 
       const CLI_NAMES: Record<string, string> = {
         claude:  'Claude Code',
@@ -78,11 +80,12 @@ Examples:
         cursor:  'Cursor',
       }
 
-      // fatal() returns `never`, so TypeScript narrows adapter to AICLIAdapter
-      const adapter: AICLIAdapter = await detectAICLI().catch(() =>
+      const selectedToolIds = options.yes ? ['claude_code'] : await askAITools()
+
+      const adapter: AICLIAdapter = await detectAICLIFor(selectedToolIds).catch((err: unknown) =>
         fatal(
           'No AI CLI found in PATH.',
-          'Install Claude Code (https://claude.ai/code), Codex, or Copilot.',
+          err instanceof Error ? err.message : 'Install Claude Code, Copilot, Cursor, or OpenAI Codex.',
         )
       )
 
@@ -104,7 +107,7 @@ Examples:
           onPrompt:   (p) => { analysisCapture.prompt = p },
           onResponse: (r) => { analysisCapture.response = r },
         }
-        fingerprint = await collector.collect(repoRoot, undefined, analysisLogger)
+        fingerprint = await collector.collect(repoRoot, undefined, analysisLogger, adapter)
         spin.succeed('Repository analysed')
       } catch (err) {
         spin.fail('Analysis failed')
@@ -170,6 +173,7 @@ Examples:
           claude_code: 'Claude Code',
           cursor:      'Cursor',
           copilot:     'GitHub Copilot',
+          codex:       'OpenAI Codex',
         }
         table(
           fingerprint.aiCLIs.map((ai) => [
@@ -300,17 +304,9 @@ Examples:
         userAnswers: Object.keys(qa).length > 0 ? qa : undefined,
       }
 
-      // Map engine command → tool ID used in generator selection
-      const ENGINE_TO_TOOL: Record<string, string> = {
-        claude:  'claude_code',
-        codex:   'codex',
-        copilot: 'copilot',
-        cursor:  'cursor',
-      }
-
-      // Union of: the active engine + any AI tools already configured in the repo
+      // Union of: user-selected tools + any AI tools already configured in the repo
       const toolsToGenerate = new Set<string>([
-        ENGINE_TO_TOOL[adapter.command] ?? adapter.command,
+        ...selectedToolIds,
         ...fingerprint.aiCLIs.map((a) => a.tool),
       ])
 
@@ -342,13 +338,8 @@ Examples:
       // ── Step 9: Confirm ──────────────────────────────────────────────────
 
       if (!options.yes) {
-        const rl = createInterface({ input: process.stdin, output: process.stdout })
-        const answer = await rl.question('Write these files? [Y/n] ')
-        rl.close()
-        if (answer.trim().toLowerCase() === 'n') {
-          log.info('Aborted.')
-          process.exit(0)
-        }
+        const go = await confirm({ message: 'Write these files?' })
+        if (isCancel(go) || go === false) { cancel('Aborted.'); process.exit(0) }
       }
 
       // ── Step 10: Write files ─────────────────────────────────────────────
@@ -383,11 +374,27 @@ Examples:
 
       // ── Done ─────────────────────────────────────────────────────────────
 
-      log.blank()
-      divider()
-      log.success(`Done. AI context is ready in ${fingerprint.repoName}.`)
-      log.info('Run `openskulls audit` to check for drift after future changes.')
+      outro(`Done. AI context is ready in ${fingerprint.repoName}.`)
     })
+}
+
+// ─── Tool selection UI ────────────────────────────────────────────────────────
+
+const TOOL_MENU = [
+  { value: 'claude_code', label: 'Claude Code',    hint: 'CLAUDE.md + .claude/commands/' },
+  { value: 'copilot',     label: 'GitHub Copilot', hint: '.github/copilot-instructions.md' },
+  { value: 'codex',       label: 'OpenAI Codex',   hint: 'AGENTS.md' },
+  { value: 'cursor',      label: 'Cursor',          hint: '.cursor/rules/project.mdc' },
+]
+
+async function askAITools(): Promise<string[]> {
+  const result = await circleMultiselect({
+    message: 'Which AI tool(s) do you use?',
+    options: TOOL_MENU,
+    initialValues: ['claude_code'],
+  })
+  if (isCancel(result)) { cancel('Cancelled.'); process.exit(0) }
+  return result as string[]
 }
 
 // ─── Config writer ────────────────────────────────────────────────────────────

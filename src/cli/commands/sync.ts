@@ -17,7 +17,7 @@
  *  Always exits 0.
  */
 
-import { createInterface } from 'node:readline/promises'
+import { confirm, isCancel, cancel } from '@clack/prompts'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -215,13 +215,8 @@ async function interactiveMode(
   }
 
   if (!options.yes) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout })
-    const answer = await rl.question('Update these files? [Y/n] ')
-    rl.close()
-    if (answer.trim().toLowerCase() === 'n') {
-      log.info('Aborted.')
-      process.exit(0)
-    }
+    const go = await confirm({ message: 'Update these files?' })
+    if (isCancel(go) || go === false) { cancel('Aborted.'); process.exit(0) }
   }
 
   // ── Step 6: Write + save ─────────────────────────────────────────────────

@@ -14,7 +14,7 @@ You are generating Claude Code SKILL.md files for a software project. Return ONL
 Project context:
 {{{projectSummary}}}
 
-Generate 5–10 project-specific skills covering the most important recurring tasks a developer performs in this codebase. Each skill becomes a file at .claude/skills/<id>/SKILL.md and creates a /<id> slash command in Claude Code.
+Generate 5-10 project-specific skills covering the most important recurring tasks a developer performs in this codebase. Each skill becomes a file at .claude/skills/<id>/SKILL.md and creates a /<id> slash command in Claude Code.
 
 The JSON must match this schema exactly:
 
@@ -33,13 +33,13 @@ The JSON must match this schema exactly:
 Field rules:
 - "id": kebab-case, lowercase letters and numbers only, no spaces — becomes the directory name and slash command (e.g. "add-api-endpoint")
 - "title": human-readable Title Case (e.g. "Add an API Endpoint")
-- "description": 1–3 sentences. Starts with "Use when...". Lists trigger keywords after "Triggers:" — these help Claude auto-detect when to load this skill
+- "description": 1-3 sentences. Starts with "Use when...". Lists trigger keywords after "Triggers:" — these help Claude auto-detect when to load this skill
 - "content": the full markdown body of the SKILL.md file. Must follow this structure:
     1. `# <title>` — H1 heading matching the title field
     2. One sentence context paragraph
-    3. `## Core Rules` — 3–8 non-negotiable rules specific to this project's conventions and file structure
+    3. `## Core Rules` — 3-8 non-negotiable rules specific to this project's conventions and file structure
     4. `## Pattern` or `## Key Files` — concrete code example OR file paths with purpose (use actual paths from this project)
-    5. `## Anti-Patterns` — 2–4 specific things to avoid with brief explanation
+    5. `## Anti-Patterns` — 2-4 specific things to avoid with brief explanation
     6. `## Checklist` — markdown checklist of steps to verify before finishing the task
     - Use real file paths and conventions from the project context above
     - Encode the project's actual stack, naming conventions, and architecture constraints

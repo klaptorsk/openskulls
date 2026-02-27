@@ -106,6 +106,15 @@ const OPENSKULLS_ASCII = [
 
 const BANNER_WIDTH = 59
 
+export function printBanner(): void {
+  console.log()
+  for (const line of OPENSKULLS_ASCII) {
+    console.log(chalk.red(line))
+  }
+  console.log(chalk.dim('─'.repeat(BANNER_WIDTH)))
+  console.log()
+}
+
 export function banner(command: string, subtitle: string): void {
   console.log()
   for (const line of OPENSKULLS_ASCII) {
