@@ -29,7 +29,7 @@ import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-bu
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
 import { selectGenerators } from '../../core/generators/registry.js'
-import { defaultProjectConfig, defaultGlobalConfig, loadWorkflowConfig } from '../../core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig, loadWorkflowConfig, loadEnabledTargets } from '../../core/config/types.js'
 import {
   divider, fatal, fileList, heading, log, spinner, verboseBlock,
 } from '../ui/console.js'
@@ -97,6 +97,7 @@ async function interactiveMode(
   }
 
   const workflowConfig = await loadWorkflowConfig(repoRoot)
+  const enabledTargets = await loadEnabledTargets(repoRoot)
 
   // ── Step 2: Analyse ──────────────────────────────────────────────────────
 
@@ -190,7 +191,7 @@ async function interactiveMode(
     workflowConfig,
   }
 
-  const activeTools = new Set(['claude_code', ...fingerprint.aiCLIs.map((a) => a.tool)])
+  const activeTools = enabledTargets
   const generatedFiles: GeneratedFile[] = selectGenerators(activeTools)
     .flatMap((g) => g.generate(generatorInput))
 
@@ -254,6 +255,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     }
 
     const workflowConfig = await loadWorkflowConfig(repoRoot)
+    const enabledTargets = await loadEnabledTargets(repoRoot)
 
     // Analyse
     const collector = new AIFingerprintCollector()
@@ -286,8 +288,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     const projectConfig = defaultProjectConfig()
     const globalConfig  = defaultGlobalConfig()
     const generatorInput = { fingerprint, installedPackages: [], projectConfig, globalConfig, aiSkills, workflowConfig }
-    const activeTools = new Set(['claude_code', ...fingerprint.aiCLIs.map((a) => a.tool)])
-    const generatedFiles: GeneratedFile[] = selectGenerators(activeTools)
+    const generatedFiles: GeneratedFile[] = selectGenerators(enabledTargets)
       .flatMap((g) => g.generate(generatorInput))
 
     const homeDir = homedir()

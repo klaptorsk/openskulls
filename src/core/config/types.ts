@@ -124,6 +124,26 @@ export function defaultGlobalConfig(): GlobalConfig {
 }
 
 /**
+ * Read [repo]/.openskulls/config.toml and return the set of enabled tool IDs.
+ * Falls back to ['claude_code'] if the file is missing, malformed, or has no targets.
+ */
+export async function loadEnabledTargets(repoRoot: string): Promise<Set<string>> {
+  const configPath = join(repoRoot, '.openskulls', 'config.toml')
+  try {
+    const raw = await readFile(configPath, 'utf-8')
+    const parsed = tomlParse(raw) as Record<string, unknown>
+    const targets = parsed['targets']
+    if (!Array.isArray(targets) || targets.length === 0) return new Set(['claude_code'])
+    const enabled = (targets as Array<Record<string, unknown>>)
+      .filter((t) => t['enabled'] !== false)
+      .map((t) => String(t['name']))
+    return enabled.length > 0 ? new Set(enabled) : new Set(['claude_code'])
+  } catch {
+    return new Set(['claude_code'])
+  }
+}
+
+/**
  * Read [repo]/.openskulls/config.toml and extract the [workflow] section.
  * Returns defaults if the file is missing or malformed.
  */
