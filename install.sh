@@ -105,9 +105,13 @@ else
   printf "\n${bold}OpenSkulls${reset} — makes your repo readable to AI agents\n\n"
 fi
 
-check_node
 pm=$(detect_package_manager)
 log_ok "Package manager: ${pm}"
+
+# Only require Node.js when bun isn't available (bun includes its own runtime)
+if [ "$pm" != "bun" ]; then
+  check_node
+fi
 
 install_package "$pm"
 verify_install
