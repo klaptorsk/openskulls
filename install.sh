@@ -6,6 +6,9 @@
 
 set -e
 
+# Ensure common package manager bin dirs are in PATH (curl | sh doesn't source .bashrc)
+export PATH="$HOME/.bun/bin:$HOME/.local/share/pnpm:$HOME/.pnpm/bin:/usr/local/bin:$PATH"
+
 PACKAGE="openskulls"
 MIN_NODE_MAJOR=20
 MODE="install"  # "install" | "update"
