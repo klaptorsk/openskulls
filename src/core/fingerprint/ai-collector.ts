@@ -58,6 +58,16 @@ const LOCK_FILES = new Set([
   'go.sum', 'Cargo.lock',
 ])
 
+/**
+ * AI instruction files — detected for presence (for detectAICLIs) but content
+ * is never sent to Claude. Injecting their content into the analysis prompt can
+ * cause prompt injection: the target repo's AI instructions override openskulls'
+ * "return only JSON" directive and produce non-JSON output.
+ */
+const AI_INSTRUCTION_FILES = new Set([
+  'CLAUDE.md', '.cursorrules', 'copilot-instructions.md', 'project.mdc',
+])
+
 const DEFAULT_EXCLUDE = new Set([
   'node_modules', '.git', 'dist', 'build', '.venv', '__pycache__',
   '.next', '.nuxt', 'coverage', '.nyc_output', 'vendor', 'target',
@@ -484,7 +494,8 @@ async function readConfigContents(
   const contents = new Map<string, string>()
 
   for (const [name, absPath] of configFiles) {
-    if (LOCK_FILES.has(name)) continue  // too large, no analysis value
+    if (LOCK_FILES.has(name)) continue           // too large, no analysis value
+    if (AI_INSTRUCTION_FILES.has(name)) continue // prompt injection risk
 
     try {
       const buf = await readFile(absPath)
