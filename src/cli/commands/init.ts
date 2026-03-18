@@ -139,7 +139,7 @@ Examples:
           fingerprint.languages.map((l) => [
             l.name + (l.primary ? ' ✦' : ''),
             `${l.percentage.toFixed(0)}%`,
-            l.version ? `v${l.version}` : '',
+            isDisplayableVersion(l.version) ? `v${l.version}` : '',
             l.confidence,
           ]),
         )
@@ -152,7 +152,7 @@ Examples:
           fingerprint.frameworks.map((f) => [
             f.name,
             f.category,
-            f.version ? `v${f.version}` : '',
+            isDisplayableVersion(f.version) ? `v${f.version}` : '',
             f.confidence,
           ]),
         )
@@ -409,6 +409,14 @@ Examples:
 
       outro(`Done. AI context is ready in ${fingerprint.repoName}.`)
     })
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Returns true only for real version strings (e.g. "3.11", "18"). Suppresses placeholder values like "unknown" or "stable". */
+function isDisplayableVersion(v: string | null | undefined): boolean {
+  if (!v) return false
+  return v !== 'unknown' && v !== 'stable' && /\d/.test(v)
 }
 
 // ─── Tool selection UI ────────────────────────────────────────────────────────

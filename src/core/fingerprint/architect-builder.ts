@@ -104,6 +104,10 @@ export function buildArchitectPrompt(
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
+const ArchitectSkill = AISkill.extend({
+  category: AISkill.shape.category.default('workflow'),
+})
+
 export async function generateArchitectSkill(
   fingerprint: RepoFingerprint,
   workflowConfig: WorkflowConfig,
@@ -113,5 +117,5 @@ export async function generateArchitectSkill(
   const cliCommand = await detectAICLI()
   const prompt = buildArchitectPrompt(fingerprint, workflowConfig, qa)
   const raw = await invokeAICLI(cliCommand, prompt, 120_000, logger)
-  return AISkill.parse(JSON.parse(stripJsonFences(raw)))
+  return ArchitectSkill.parse(JSON.parse(stripJsonFences(raw)))
 }

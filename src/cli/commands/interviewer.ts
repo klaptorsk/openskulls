@@ -71,31 +71,56 @@ export async function runInterviewer(
   })
   if (isCancel(archAnswer)) { cancel('Cancelled.'); process.exit(0) }
 
-  const architectEnabled = archAnswer === 'yes'
+  let architectEnabled = archAnswer === 'yes'
 
   let architectDomain = ''
   let architectReview: WorkflowConfig['architectReview'] = 'ask'
 
   if (architectEnabled) {
-    // Question 4 — architect domain
-    const domainAnswer = await text({
-      message: 'Primary domain or focus for the architect:',
-      placeholder: 'auto-detect from project signals',
-    })
-    if (isCancel(domainAnswer)) { cancel('Cancelled.'); process.exit(0) }
-    architectDomain = domainAnswer ?? ''
-
-    // Question 5 — architect review trigger
-    const reviewAnswer = await select({
-      message: 'When should the architect review new features:',
+    // Question 4 — architect domain (select with optional custom text)
+    const domainSelect = await select({
+      message: 'Primary domain for the architect skill:',
       options: [
-        { value: 'ask' as const,    label: 'Ask me first',                                  hint: 'default' },
-        { value: 'always' as const, label: 'Always (add to workflow rules automatically)' },
-        { value: 'never' as const,  label: 'Only when I invoke /architect-review' },
+        { value: '',           label: 'Auto-detect from project signals', hint: 'default' },
+        { value: 'backend',    label: 'Backend / API' },
+        { value: 'frontend',   label: 'Frontend / UI' },
+        { value: 'full-stack', label: 'Full-stack' },
+        { value: 'data-ml',    label: 'Data / ML' },
+        { value: 'devops',     label: 'DevOps / Infrastructure' },
+        { value: 'mobile',     label: 'Mobile' },
+        { value: '__other__',  label: 'Other (custom…)' },
+        { value: '__skip__',   label: 'Skip — don\'t generate architect skill' },
       ],
     })
-    if (isCancel(reviewAnswer)) { cancel('Cancelled.'); process.exit(0) }
-    architectReview = reviewAnswer
+    if (isCancel(domainSelect)) { cancel('Cancelled.'); process.exit(0) }
+
+    if (domainSelect === '__skip__') {
+      architectEnabled = false
+    } else if (domainSelect === '__other__') {
+      const customDomain = await text({
+        message: 'Describe the primary domain or focus:',
+        placeholder: 'e.g. distributed systems, real-time data pipelines…',
+      })
+      if (isCancel(customDomain)) { cancel('Cancelled.'); process.exit(0) }
+      architectDomain = (customDomain ?? '').trim()
+      if (!architectDomain) architectEnabled = false
+    } else {
+      architectDomain = domainSelect as string
+    }
+
+    if (architectEnabled) {
+      // Question 5 — architect review trigger
+      const reviewAnswer = await select({
+        message: 'When should the architect review new features:',
+        options: [
+          { value: 'ask' as const,    label: 'Ask me first',                                  hint: 'default' },
+          { value: 'always' as const, label: 'Always (add to workflow rules automatically)' },
+          { value: 'never' as const,  label: 'Only when I invoke /architect-review' },
+        ],
+      })
+      if (isCancel(reviewAnswer)) { cancel('Cancelled.'); process.exit(0) }
+      architectReview = reviewAnswer
+    }
   }
 
   // Question 6 — subagent generation

@@ -261,7 +261,7 @@ All prompts use interactive arrow-key selectors — use `↑`/`↓` to navigate,
 | Auto-documentation | Ask me first / Update automatically / Handle myself | Ask me first |
 | Auto-commit | Ask me first / Commit automatically / Never | Ask me first |
 | Architect agent | Yes / No | Yes |
-| (If yes) Architect domain | Free text | auto-detect |
+| (If yes) Architect domain | Auto-detect / Backend / Frontend / Full-stack / Data-ML / DevOps / Mobile / Other (custom) / Skip | Auto-detect |
 | Architect review trigger | Ask me first / Always / Only on `/architect-review` | Ask me first |
 | Skill generation | Single AI call / Parallel subagents | Single AI call |
 
