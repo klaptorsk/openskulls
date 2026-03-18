@@ -9,15 +9,10 @@
  * load and remains a pure function at call time.
  */
 
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
+import { ANALYSIS_TEMPLATE } from '../../generated/templates.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const TEMPLATE_PATH = join(__dirname, '../../../templates/prompts/analysis.md.hbs')
-const TEMPLATE_SOURCE = readFileSync(TEMPLATE_PATH, 'utf-8')
-const COMPILED = Handlebars.compile(TEMPLATE_SOURCE, { noEscape: true })
+const COMPILED = Handlebars.compile(ANALYSIS_TEMPLATE, { noEscape: true })
 
 const MAX_TREE_ENTRIES = 500
 

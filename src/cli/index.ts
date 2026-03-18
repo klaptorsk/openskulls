@@ -2,8 +2,8 @@
  * CLI program setup — command routing only, no business logic.
  */
 
-import { createRequire } from 'module'
 import { Command } from 'commander'
+import { VERSION } from '../generated/templates.js'
 import { registerInit } from './commands/init.js'
 import { registerSync } from './commands/sync.js'
 import { registerUninstall } from './commands/uninstall.js'
@@ -11,8 +11,7 @@ import { registerAdd } from './commands/add.js'
 import { registerRemove } from './commands/remove.js'
 import { registerList } from './commands/list.js'
 
-const require = createRequire(import.meta.url)
-const { version } = require('../../package.json') as { version: string }
+const version = VERSION
 
 export function createProgram(): Command {
   const program = new Command()

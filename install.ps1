@@ -8,9 +8,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Package = "openskulls"
-$BunHome = "$env:USERPROFILE\.bun"
-$BunExe  = "$BunHome\bin\bun.exe"
+$Repo      = "klaptorsk/openskulls"
+$InstallDir = if ($env:OPENSKULLS_INSTALL_DIR) { $env:OPENSKULLS_INSTALL_DIR } else { "$env:USERPROFILE\.local\bin" }
+$BinName   = "openskulls.exe"
+$BinPath   = Join-Path $InstallDir $BinName
 
 function Write-Step { param($msg) Write-Host "=> $msg" -ForegroundColor Cyan }
 function Write-Ok   { param($msg) Write-Host ([char]0x2713 + "  $msg") -ForegroundColor Green }
@@ -18,44 +19,44 @@ function Write-Warn { param($msg) Write-Host "!  $msg" -ForegroundColor Yellow }
 function Write-Err  { param($msg) Write-Host ([char]0x2717 + "  $msg") -ForegroundColor Red }
 function Die        { param($msg) Write-Err $msg; exit 1 }
 
-# ── Ensure bun ────────────────────────────────────────────────────────────────
+# ── Detect platform ───────────────────────────────────────────────────────────
 
-function Ensure-Bun {
-  $bun = Get-Command bun -ErrorAction SilentlyContinue
-  if ($bun) {
-    $ver = & bun --version 2>$null
-    Write-Ok "bun $ver"
-    return "bun"
+function Get-Platform {
+  $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture
+  switch ($arch) {
+    'X64'   { return "windows-x64" }
+    'Arm64' { return "windows-arm64" }
+    default { Die "Unsupported architecture: $arch" }
   }
-
-  if (Test-Path $BunExe) {
-    $ver = & $BunExe --version 2>$null
-    Write-Ok "bun $ver"
-    return $BunExe
-  }
-
-  Write-Step "bun not found — installing bun..."
-  try {
-    irm bun.sh/install | iex
-  } catch {
-    Die "Failed to install bun. Visit https://bun.sh to install manually."
-  }
-
-  if (-not (Test-Path $BunExe)) {
-    Die "bun installation failed. Open a new terminal and re-run this installer."
-  }
-
-  $ver = & $BunExe --version 2>$null
-  Write-Ok "bun $ver"
-  return $BunExe
 }
 
-# ── Install ───────────────────────────────────────────────────────────────────
+# ── Download binary ───────────────────────────────────────────────────────────
 
-function Install-OpenSkulls {
-  param($bun)
-  Write-Step "$Action $Package..."
-  & $bun add --global "${Package}@latest"
+function Install-Binary {
+  param($platform)
+  $url = "https://github.com/$Repo/releases/latest/download/openskulls-$platform.exe"
+
+  Write-Step "Downloading openskulls for $platform..."
+
+  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+  try {
+    Invoke-WebRequest -Uri $url -OutFile $BinPath -UseBasicParsing
+  } catch {
+    Die "Download failed. Check https://github.com/$Repo/releases"
+  }
+
+  Write-Ok "Installed to $BinPath"
+}
+
+# ── Ensure install dir is in PATH ─────────────────────────────────────────────
+
+function Ensure-InPath {
+  $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+  if ($userPath -notlike "*$InstallDir*") {
+    [Environment]::SetEnvironmentVariable("PATH", "$InstallDir;$userPath", "User")
+    $env:PATH = "$InstallDir;$env:PATH"
+    Write-Ok "Added $InstallDir to user PATH"
+  }
 }
 
 # ── Verify ────────────────────────────────────────────────────────────────────
@@ -63,8 +64,8 @@ function Install-OpenSkulls {
 function Verify-Install {
   $cmd = Get-Command openskulls -ErrorAction SilentlyContinue
   if (-not $cmd) {
-    Write-Warn "openskulls installed but not in PATH."
-    Write-Warn "Add $BunHome\bin to your PATH, then run: openskulls --version"
+    Write-Warn "openskulls is installed but not yet in PATH for this session."
+    Write-Warn "Open a new terminal, or run: $BinPath --version"
     return
   }
   $ver = & openskulls --version 2>$null
@@ -73,22 +74,20 @@ function Verify-Install {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+Write-Host ""
+Write-Host "OpenSkulls" -ForegroundColor White -NoNewline
 if ($Update) {
-  $Action = "Updating"
-  Write-Host ""
-  Write-Host "OpenSkulls" -ForegroundColor White -NoNewline
   Write-Host " — updating to latest"
-  Write-Host ""
 } else {
-  $Action = "Installing"
-  Write-Host ""
-  Write-Host "OpenSkulls" -ForegroundColor White -NoNewline
   Write-Host " — makes your repo readable to AI agents"
-  Write-Host ""
 }
+Write-Host ""
 
-$bun = Ensure-Bun
-Install-OpenSkulls $bun
+$platform = Get-Platform
+Write-Ok "Platform: $platform"
+
+Install-Binary $platform
+Ensure-InPath
 Verify-Install
 
 if (-not $Update) {

@@ -9,19 +9,21 @@
   "files": [
     "dist",
     "templates",
+    "scripts",
     "install.sh",
     "install.ps1",
     "uninstall.sh"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc --project tsconfig.json && chmod +x dist/index.js",
-    "dev": "tsc --watch",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "eslint 'src/**/*.ts'",
-    "prepublishOnly": "npm run build"
+    "gen": "bun scripts/gen-templates.ts",
+    "build": "bun scripts/gen-templates.ts && rm -rf dist && tsc --project tsconfig.json && chmod +x dist/index.js",
+    "compile": "bun scripts/gen-templates.ts && bun build --compile src/index.ts --outfile openskulls",
+    "dev": "bun scripts/gen-templates.ts && tsc --watch",
+    "typecheck": "bun scripts/gen-templates.ts && tsc --noEmit",
+    "test": "bun scripts/gen-templates.ts && vitest run",
+    "test:watch": "bun scripts/gen-templates.ts && vitest",
+    "test:coverage": "bun scripts/gen-templates.ts && vitest run --coverage",
+    "lint": "eslint 'src/**/*.ts'"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",

@@ -9,16 +9,11 @@
  * load and remains a pure function at call time.
  */
 
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
 import type { RepoFingerprint } from './types.js'
+import { SKILLS_TEMPLATE } from '../../generated/templates.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const TEMPLATE_PATH = join(__dirname, '../../../templates/prompts/skills.md.hbs')
-const TEMPLATE_SOURCE = readFileSync(TEMPLATE_PATH, 'utf-8')
-const COMPILED = Handlebars.compile(TEMPLATE_SOURCE, { noEscape: true })
+const COMPILED = Handlebars.compile(SKILLS_TEMPLATE, { noEscape: true })
 
 export function buildSkillsPrompt(fingerprint: RepoFingerprint, qa?: Record<string, string>): string {
   const {

@@ -1,5 +1,11 @@
 # Build output
 dist/
+src/generated/
+
+# Compiled binaries
+openskulls-linux-*
+openskulls-darwin-*
+openskulls-windows-*
 *.js.map
 *.d.ts
 *.d.ts.map

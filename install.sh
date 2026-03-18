@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# OpenSkulls installer / updater
+# OpenSkulls installer
 #
 # Install:  curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh
 # Update:   curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh -s -- --update
@@ -7,7 +7,8 @@
 
 set -e
 
-PACKAGE="openskulls"
+REPO="klaptorsk/openskulls"
+INSTALL_DIR="${OPENSKULLS_INSTALL_DIR:-$HOME/.local/bin}"
 MODE="install"
 
 for arg in "$@"; do
@@ -31,42 +32,59 @@ log_warn()  { printf "${yellow}!${reset} %s\n" "$1"; }
 log_error() { printf "${red}✗${reset} %s\n" "$1" >&2; }
 die()       { log_error "$1"; exit 1; }
 
-# ── Ensure bun ────────────────────────────────────────────────────────────────
+# ── Detect platform ───────────────────────────────────────────────────────────
 
-BUN_BIN="$HOME/.bun/bin/bun"
-export PATH="$HOME/.bun/bin:$PATH"
+detect_platform() {
+  os=$(uname -s | tr '[:upper:]' '[:lower:]')
+  arch=$(uname -m)
 
-ensure_bun() {
-  if command -v bun >/dev/null 2>&1; then
-    log_ok "bun $(bun --version)"
-    return
-  fi
+  case "$os" in
+    linux*)  os="linux" ;;
+    darwin*) os="darwin" ;;
+    *)       die "Unsupported OS: $os. Use the Windows installer (install.ps1) on Windows." ;;
+  esac
 
-  log_step "bun not found — installing bun..."
-  curl -fsSL https://bun.sh/install | sh || die "Failed to install bun. Visit https://bun.sh to install manually."
-  export PATH="$HOME/.bun/bin:$PATH"
+  case "$arch" in
+    x86_64|amd64) arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) die "Unsupported architecture: $arch" ;;
+  esac
 
-  if ! command -v bun >/dev/null 2>&1 && [ ! -x "$BUN_BIN" ]; then
-    die "bun installed but not in PATH. Open a new terminal and re-run this installer."
-  fi
-
-  log_ok "bun $("$BUN_BIN" --version 2>/dev/null || bun --version)"
+  echo "${os}-${arch}"
 }
 
-# ── Install ───────────────────────────────────────────────────────────────────
+# ── Download binary ───────────────────────────────────────────────────────────
 
-do_install() {
-  log_step "${ACTION} ${PACKAGE}..."
-  bun add --global "${PACKAGE}@latest"
+download_binary() {
+  platform=$1
+  url="https://github.com/${REPO}/releases/latest/download/openskulls-${platform}"
+
+  log_step "Downloading openskulls for ${platform}..."
+
+  mkdir -p "$INSTALL_DIR"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$INSTALL_DIR/openskulls" || die "Download failed. Check https://github.com/${REPO}/releases"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$INSTALL_DIR/openskulls" "$url" || die "Download failed. Check https://github.com/${REPO}/releases"
+  else
+    die "Neither curl nor wget found. Install one and retry."
+  fi
+
+  chmod +x "$INSTALL_DIR/openskulls"
+  log_ok "Installed to $INSTALL_DIR/openskulls"
 }
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 
 verify_install() {
   if ! command -v openskulls >/dev/null 2>&1; then
-    log_warn "openskulls installed but not in PATH."
-    log_warn "Add ~/.bun/bin to your PATH, then run: openskulls --version"
-    return 1
+    if [ -x "$INSTALL_DIR/openskulls" ]; then
+      log_warn "openskulls is installed but $INSTALL_DIR is not in PATH."
+      log_warn "Add this to your shell profile:"
+      log_warn "  export PATH=\"$INSTALL_DIR:\$PATH\""
+      return 1
+    fi
+    die "Installation failed."
   fi
 
   version=$(openskulls --version 2>/dev/null || echo "unknown")
@@ -76,15 +94,15 @@ verify_install() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if [ "$MODE" = "update" ]; then
-  ACTION="Updating"
   printf "\n${bold}OpenSkulls${reset} — updating to latest\n\n"
 else
-  ACTION="Installing"
   printf "\n${bold}OpenSkulls${reset} — makes your repo readable to AI agents\n\n"
 fi
 
-ensure_bun
-do_install
+platform=$(detect_platform)
+log_ok "Platform: ${platform}"
+
+download_binary "$platform"
 verify_install
 
 if [ "$MODE" = "install" ]; then

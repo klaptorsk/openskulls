@@ -10,23 +10,18 @@
  * Reads the CLAUDE.md template once at module load; no I/O in generate().
  */
 
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
 import { skillsForTool } from '../packages/types.js'
 import { type RepoFingerprint } from '../fingerprint/types.js'
 import { type AISkill } from '../fingerprint/skills-builder.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
 import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines } from './shared.js'
+import { CLAUDE_MD_TEMPLATE } from '../../generated/templates.js'
 
 // ─── Template loading ─────────────────────────────────────────────────────────
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const TEMPLATE_PATH = join(__dirname, '../../../templates/claude-code/CLAUDE.md.hbs')
-
-// Read template once at module load — not inside generate() — so the function is pure.
-const TEMPLATE_SOURCE = readFileSync(TEMPLATE_PATH, 'utf-8')
+// Template is inlined at build time — no runtime filesystem dependency.
+const TEMPLATE_SOURCE = CLAUDE_MD_TEMPLATE
 
 // ─── Handlebars setup ─────────────────────────────────────────────────────────
 

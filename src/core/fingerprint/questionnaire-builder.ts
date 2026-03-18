@@ -8,20 +8,15 @@
  * The prompt template lives at templates/prompts/questionnaire.md.hbs.
  */
 
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
 import { z } from 'zod'
 import { detectAICLI, invokeAICLI, stripJsonFences, type VerboseLogger } from './ai-collector.js'
 import type { RepoFingerprint } from './types.js'
+import { QUESTIONNAIRE_TEMPLATE } from '../../generated/templates.js'
 
 // ─── Template loading ─────────────────────────────────────────────────────────
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const TEMPLATE_PATH = join(__dirname, '../../../templates/prompts/questionnaire.md.hbs')
-const TEMPLATE_SOURCE = readFileSync(TEMPLATE_PATH, 'utf-8')
-const COMPILED = Handlebars.compile(TEMPLATE_SOURCE, { noEscape: true })
+const COMPILED = Handlebars.compile(QUESTIONNAIRE_TEMPLATE, { noEscape: true })
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 

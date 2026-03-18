@@ -8,24 +8,18 @@
  * edited directly to tune architect skill quality without touching TypeScript.
  */
 
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import Handlebars from 'handlebars'
 import { detectAICLI, invokeAICLI, stripJsonFences, type VerboseLogger } from './ai-collector.js'
 import { AISkill } from './skills-builder.js'
 import type { RepoFingerprint } from './types.js'
 import type { WorkflowConfig } from '../config/types.js'
+import { ARCHITECT_TEMPLATE } from '../../generated/templates.js'
 
 // ─── Template loading ─────────────────────────────────────────────────────────
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const TEMPLATE_PATH = join(__dirname, '../../../templates/prompts/architect.md.hbs')
-const TEMPLATE_SOURCE = readFileSync(TEMPLATE_PATH, 'utf-8')
-
 const hbs = Handlebars.create()
 hbs.registerHelper('eq', (a: unknown, b: unknown) => a === b)
-const COMPILED = hbs.compile(TEMPLATE_SOURCE, { noEscape: true })
+const COMPILED = hbs.compile(ARCHITECT_TEMPLATE, { noEscape: true })
 
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 
