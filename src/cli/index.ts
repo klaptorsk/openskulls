@@ -7,6 +7,9 @@ import { Command } from 'commander'
 import { registerInit } from './commands/init.js'
 import { registerSync } from './commands/sync.js'
 import { registerUninstall } from './commands/uninstall.js'
+import { registerAdd } from './commands/add.js'
+import { registerRemove } from './commands/remove.js'
+import { registerList } from './commands/list.js'
 
 const require = createRequire(import.meta.url)
 const { version } = require('../../package.json') as { version: string }
@@ -25,6 +28,9 @@ export function createProgram(): Command {
   registerInit(program)
   registerSync(program)
   registerUninstall(program)
+  registerAdd(program)
+  registerRemove(program)
+  registerList(program)
 
   return program
 }

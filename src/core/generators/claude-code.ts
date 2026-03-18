@@ -140,9 +140,17 @@ export class ClaudeCodeGenerator extends BaseGenerator {
       files.push(f)
     }
 
+    // Pack skills as SKILL.md (git-native packs use skills/ not commands/)
     for (const pkg of installedPackages) {
       for (const skill of skillsForTool(pkg, this.toolId)) {
-        files.push(repoFile(`.claude/commands/${skill.id}.md`, skill.content))
+        const packSkillContent = buildSkillFile({
+          id: `${pkg.name}-${skill.id}`,
+          title: skill.name,
+          description: skill.description,
+          content: skill.content,
+          category: 'workflow',
+        })
+        files.push(repoFile(`.claude/skills/${pkg.name}-${skill.id}/SKILL.md`, packSkillContent))
       }
     }
 

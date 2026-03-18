@@ -17,7 +17,7 @@ export const AISkill = z.object({
   title:       z.string(),                           // "Add a New API Route"
   description: z.string(),                           // trigger description → frontmatter
   content:     z.string(),                           // full markdown body of SKILL.md
-  category:    z.enum(['workflow', 'testing', 'debugging', 'refactoring', 'documentation', 'devops', 'other']),
+  category:    z.enum(['workflow', 'testing', 'debugging', 'refactoring', 'documentation', 'devops', 'methodology', 'process', 'security', 'other']),
 })
 export type AISkill = z.infer<typeof AISkill>
 

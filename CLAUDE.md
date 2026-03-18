@@ -109,6 +109,14 @@ Primary language: **TypeScript**.
 | `templates/prompts/skills.md.hbs` | AI skills generation prompt template |
 | `templates/prompts/questionnaire.md.hbs` | AI questionnaire prompt template |
 | `templates/prompts/architect.md.hbs` | AI architect skill prompt template |
+| `templates/prompts/methodology.md.hbs` | Methodology skills prompt template |
+| `src/core/packages/manifest.ts` | `SkullPackManifest` Zod schema for pack TOML format |
+| `src/core/packages/loader.ts` | `loadInstalledPacks()`, pack-to-SkullPackage transformation |
+| `src/core/fingerprint/methodology-prompt.ts` | `buildMethodologyPrompt()` — pure, builds methodology AI prompt |
+| `src/core/fingerprint/methodology-builder.ts` | `generateMethodologySkills()`, `MethodologySkillsResponse` schema |
+| `src/cli/commands/add.ts` | `registerAdd()` — `openskulls add github:user/repo` |
+| `src/cli/commands/remove.ts` | `registerRemove()` — `openskulls remove <name>` |
+| `src/cli/commands/list.ts` | `registerList()` — `openskulls list` |
 | `tests/helpers/index.ts` | `makeContext(files)` test factory (creates real temp dirs) |
 
 ---
@@ -129,7 +137,11 @@ Primary language: **TypeScript**.
 | R-2 | Generator registry — `getBuiltinGenerators()` to replace hardcoded init/sync branching | ⬜ |
 | R-3 | Wire registry into CLI — replace hardcoded generator instantiation | ⬜ |
 | 7 | Dependency drift check + `openskulls audit` command | ⬜ |
-| 8 | `openskulls add` — local packages only | ⬜ |
+| P-1 | Git-native skill packs — `InstalledPackEntry`, `SkullPackManifest`, `loadInstalledPacks()` | ✅ |
+| P-2 | Methodology skills — `generateMethodologySkills()`, wired into init + sync | ✅ |
+| P-3 | Pack emission — `ClaudeCodeGenerator` emits pack skills as `.claude/skills/<pack>-<id>/SKILL.md` | ✅ |
+| P-4 | `openskulls add` — git-native packs (github: + local symlink) | ✅ |
+| P-5 | `openskulls remove` + `openskulls list` commands | ✅ |
 
 <!-- openskulls:section:workflow_rules -->
 ## Workflow Rules

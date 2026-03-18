@@ -105,6 +105,16 @@ export const Lockfile = z.object({
 })
 export type Lockfile = z.infer<typeof Lockfile>
 
+// ─── InstalledPackEntry ──────────────────────────────────────────────────────
+
+export const InstalledPackEntry = z.object({
+  name: z.string(),
+  source: z.enum(['github', 'local']),
+  sourceUrl: z.string(),
+  installedAt: z.string(),
+})
+export type InstalledPackEntry = z.infer<typeof InstalledPackEntry>
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export function skillsForTool(pkg: SkullPackage, toolId: string): Skill[] {

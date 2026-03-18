@@ -26,6 +26,8 @@ import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerpri
 import { loadFingerprint, saveFingerprint } from '../../core/fingerprint/cache.js'
 import { hasDrifted } from '../../core/fingerprint/types.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
+import { generateMethodologySkills } from '../../core/fingerprint/methodology-builder.js'
+import { loadInstalledPacks } from '../../core/packages/loader.js'
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
 import { selectGenerators } from '../../core/generators/registry.js'
@@ -176,14 +178,39 @@ async function interactiveMode(
     }
   }
 
+  // ── Step 3d: Methodology skills ──────────────────────────────────────────
+
+  const methSpin = spinner('Generating methodology skills…').start()
+  const methCapture = { prompt: '', response: '' }
+  try {
+    const methLogger: VerboseLogger = {
+      onPrompt:   (p) => { methCapture.prompt = p },
+      onResponse: (r) => { methCapture.response = r },
+    }
+    const taskIds = aiSkills.map((s) => s.id)
+    const methSkills = await generateMethodologySkills(fingerprint, methLogger, undefined, [], taskIds)
+    aiSkills = [...aiSkills, ...methSkills]
+    methSpin.succeed(`Generated ${methSkills.length} methodology skills`)
+  } catch (err) {
+    methSpin.warn('Could not generate methodology skills — skipping')
+    log.info(err instanceof Error ? err.message : String(err))
+  }
+  if (options.verbose) {
+    verboseBlock('Methodology prompt', methCapture.prompt)
+    verboseBlock('Methodology response', methCapture.response)
+  }
+
   // ── Step 4: Generate files ───────────────────────────────────────────────
 
   const projectConfig = defaultProjectConfig()
   const globalConfig  = defaultGlobalConfig()
 
+  // TODO(v1.1): git pull on installed packs during sync
+  const installedPacks = await loadInstalledPacks(repoRoot)
+
   const generatorInput = {
     fingerprint,
-    installedPackages: [],
+    installedPackages: installedPacks,
     projectConfig,
     globalConfig,
     aiSkills,
@@ -282,10 +309,21 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       }
     }
 
+    // Methodology skills (non-fatal)
+    try {
+      const taskIds = aiSkills.map((s) => s.id)
+      const methSkills = await generateMethodologySkills(fingerprint, undefined, undefined, [], taskIds)
+      aiSkills = [...aiSkills, ...methSkills]
+    } catch {
+      // Skip silently in hook mode
+    }
+
     // Generate + write silently
     const projectConfig = defaultProjectConfig()
     const globalConfig  = defaultGlobalConfig()
-    const generatorInput = { fingerprint, installedPackages: [], projectConfig, globalConfig, aiSkills, workflowConfig }
+    // TODO(v1.1): git pull on installed packs during sync
+    const installedPacks = await loadInstalledPacks(repoRoot)
+    const generatorInput = { fingerprint, installedPackages: installedPacks, projectConfig, globalConfig, aiSkills, workflowConfig }
     const activeTools = new Set(['claude_code', ...fingerprint.aiCLIs.map((a) => a.tool)])
     const generatedFiles: GeneratedFile[] = selectGenerators(activeTools)
       .flatMap((g) => g.generate(generatorInput))

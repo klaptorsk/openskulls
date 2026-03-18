@@ -303,7 +303,7 @@ describe('CLAUDE.md content', () => {
 // ─── Package skill files ──────────────────────────────────────────────────────
 
 describe('skill command files', () => {
-  it('generates a command file for each skill in installed packages', () => {
+  it('generates a skill file for each skill in installed packages', () => {
     const pkg = makePackage({
       skills: [
         {
@@ -329,13 +329,13 @@ describe('skill command files', () => {
       ],
     })
     const files = gen.generate(makeInput({ installedPackages: [pkg] }))
-    const commands = files.filter((f) => f.relativePath.startsWith('.claude/commands/'))
-    expect(commands).toHaveLength(2)
-    expect(commands.map((f) => f.relativePath)).toContain('.claude/commands/commit.md')
-    expect(commands.map((f) => f.relativePath)).toContain('.claude/commands/review-pr.md')
+    const skillFiles = files.filter((f) => f.relativePath.startsWith('.claude/skills/') && f.relativePath.includes('@test/pkg'))
+    expect(skillFiles).toHaveLength(2)
+    expect(skillFiles.map((f) => f.relativePath)).toContain('.claude/skills/@test/pkg-commit/SKILL.md')
+    expect(skillFiles.map((f) => f.relativePath)).toContain('.claude/skills/@test/pkg-review-pr/SKILL.md')
   })
 
-  it('preserves skill content exactly', () => {
+  it('preserves skill content in SKILL.md wrapper', () => {
     const skillContent = '# My Skill\n\nDo something specific.\n\n- Step 1\n- Step 2\n'
     const pkg = makePackage({
       skills: [
@@ -352,8 +352,9 @@ describe('skill command files', () => {
       ],
     })
     const files = gen.generate(makeInput({ installedPackages: [pkg] }))
-    const skillFile = files.find((f) => f.relativePath === '.claude/commands/my-skill.md')!
-    expect(skillFile.content).toBe(skillContent)
+    const skillFile = files.find((f) => f.relativePath === '.claude/skills/@test/pkg-my-skill/SKILL.md')!
+    expect(skillFile).toBeDefined()
+    expect(skillFile.content).toContain(skillContent)
   })
 
   it('excludes skills not compatible with claude_code', () => {
@@ -382,9 +383,9 @@ describe('skill command files', () => {
       ],
     })
     const files = gen.generate(makeInput({ installedPackages: [pkg] }))
-    const commands = files.filter((f) => f.relativePath.startsWith('.claude/commands/'))
-    expect(commands).toHaveLength(1)
-    expect(commands[0].relativePath).toBe('.claude/commands/all-tools.md')
+    const skillFiles = files.filter((f) => f.relativePath.startsWith('.claude/skills/@test/pkg'))
+    expect(skillFiles).toHaveLength(1)
+    expect(skillFiles[0].relativePath).toBe('.claude/skills/@test/pkg-all-tools/SKILL.md')
   })
 
   it('handles multiple packages, deduplication left to caller', () => {
@@ -419,8 +420,8 @@ describe('skill command files', () => {
       ],
     })
     const files = gen.generate(makeInput({ installedPackages: [pkg1, pkg2] }))
-    const commands = files.filter((f) => f.relativePath.startsWith('.claude/commands/'))
-    expect(commands).toHaveLength(2)
+    const skillFiles = files.filter((f) => f.relativePath.startsWith('.claude/skills/') && f.relativePath.endsWith('/SKILL.md') && f.relativePath.includes('@test/pkg'))
+    expect(skillFiles).toHaveLength(2)
   })
 })
 

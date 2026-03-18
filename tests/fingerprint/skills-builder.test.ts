@@ -178,8 +178,15 @@ describe('AISkill schema', () => {
   })
 
   it('accepts all valid categories', () => {
-    const categories = ['workflow', 'testing', 'debugging', 'refactoring', 'documentation', 'devops', 'other'] as const
+    const categories = ['workflow', 'testing', 'debugging', 'refactoring', 'documentation', 'devops', 'methodology', 'process', 'security', 'other'] as const
     for (const category of categories) {
+      expect(() => AISkill.parse(makeValidSkill({ category }))).not.toThrow()
+    }
+  })
+
+  it('accepts methodology categories', () => {
+    const methodologyCategories = ['methodology', 'process', 'security'] as const
+    for (const category of methodologyCategories) {
       expect(() => AISkill.parse(makeValidSkill({ category }))).not.toThrow()
     }
   })

@@ -1,0 +1,89 @@
+{{!--
+  Methodology prompt — sent to the AI CLI to generate project-specific
+  methodology skills (architect, workflow, verify, tdd).
+
+  Template variables (Handlebars triple-brace = unescaped):
+    {{{projectContext}}}  — structured project context from fingerprint
+    {{{installedSkills}}} — list of installed pack skill IDs (deduplication)
+    {{{taskSkillIds}}}    — list of already-generated task skill IDs
+    {{hasTesting}}        — boolean: whether testing framework was detected
+--}}
+You are generating methodology SKILL.md files for a software project. These skills encode project-specific development processes — NOT task recipes. Return ONLY a JSON object — no explanation, no markdown fences, no commentary.
+
+Project context:
+{{{projectContext}}}
+
+{{#if installedSkills}}
+Installed skills (do not duplicate — skip any methodology already covered):
+{{{installedSkills}}}
+
+{{/if}}
+{{#if taskSkillIds}}
+Existing task skills (reference these in methodology where relevant):
+{{{taskSkillIds}}}
+
+{{/if}}
+Generate the following methodology skills:
+
+1. "architect" (category: "methodology") — Boundary enforcement and feature placement.
+   - Map each module directory to its semantic responsibility
+   - Define placement rules: where new features, services, types, tests go
+   - Define layer rules: which modules can import from which
+   - Define extension patterns: how to add a new X following existing design
+   - List anti-patterns: specific architectural violations to avoid
+   - Use REAL paths from the project context above
+
+2. "workflow-lifecycle" (category: "methodology") — Commit, docs, and feature lifecycle.
+   - Commit message format based on detected git conventions
+   - Which documentation files to update when code changes
+   - Feature completion protocol: implement → test → lint → document → commit
+   - What "done" means in this project
+   - Reference other methodology skills by /<id>
+
+3. "verify" (category: "methodology") — Pre-completion verification checklist.
+   - Exact commands to run before claiming work is done (test, lint, build, typecheck)
+   - Convention checks specific to this project
+   - Integration checks for cross-module changes
+   - Use actual command names and paths from project context
+
+{{#if hasTesting}}
+4. "tdd" (category: "process") — Test-driven development grounded in this project.
+   - Reference the detected test framework, runner, pattern, helpers
+   - Show a real test structure example following this project's patterns
+   - Specify what to mock vs what to use real instances of
+   - Coverage tool and expectations if detected
+{{/if}}
+
+The JSON must match this schema exactly:
+
+{
+  "skills": [
+    {
+      "id": "architect",
+      "title": "Architecture Guide",
+      "description": "Use when placing new code, adding features, or creating new modules. Triggers: new file, new module, where to put, architecture.",
+      "content": "# Architecture Guide\n\n...",
+      "category": "methodology"
+    }
+  ]
+}
+
+Field rules:
+- "id": exactly one of "architect", "workflow-lifecycle", "verify"{{#if hasTesting}}, "tdd"{{/if}} — no other ids
+- "title": human-readable Title Case
+- "description": 1-3 sentences. Starts with "Use when...". Lists trigger keywords after "Triggers:"
+- "content": full markdown body of the SKILL.md file. Must follow this structure:
+    1. `# <title>` — H1 heading matching the title field
+    2. One sentence context paragraph
+    3. `## Core Rules` — 3-8 non-negotiable rules using REAL file paths and conventions from this project
+    4. `## Pattern` or `## Key Files` — concrete code example OR file paths with purpose
+    5. `## Anti-Patterns` — 2-4 specific things to avoid with brief explanation
+    6. `## Checklist` — markdown checklist of steps to verify
+    - Use real file paths and conventions from the project context above
+    - Encode the project's actual stack, naming conventions, and architecture constraints
+    - Keep it dense and reference-grade
+    - Escape all double quotes and newlines in the JSON string value (\" and \n)
+- "category": exactly one of "methodology", "process"
+- Do not generate skills with ids "run-tests", "commit", or "architect-review" — those are reserved
+
+Return only the JSON object. No markdown fences. No explanation.

@@ -28,6 +28,8 @@ import type { Command } from 'commander'
 import { AIFingerprintCollector, detectAICLIFor, type AICLIAdapter, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
+import { generateMethodologySkills } from '../../core/fingerprint/methodology-builder.js'
+import { loadInstalledPacks } from '../../core/packages/loader.js'
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
 import { generateQuestionnaire, type AIQuestion } from '../../core/fingerprint/questionnaire-builder.js'
 import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
@@ -289,14 +291,41 @@ Examples:
         }
       }
 
+      // ── Step 5b: Generate methodology skills ─────────────────────────────
+
+      const methCapture = { prompt: '', response: '' }
+      const methLogger: VerboseLogger = {
+        onPrompt:   (p) => { methCapture.prompt = p },
+        onResponse: (r) => { methCapture.response = r },
+      }
+      const methSpin = spinner('Generating methodology skills…').start()
+      try {
+        const taskSkillIds = aiSkills.map((s) => s.id)
+        const methodologySkills = await generateMethodologySkills(
+          fingerprint, methLogger, qaArg, [], taskSkillIds,
+        )
+        aiSkills = [...aiSkills, ...methodologySkills]
+        methSpin.succeed(`Generated ${methodologySkills.length} methodology skills`)
+      } catch (err) {
+        methSpin.warn('Could not generate methodology skills — skipping')
+        log.info(err instanceof Error ? err.message : String(err))
+      }
+      if (options.verbose) {
+        verboseBlock('Methodology prompt', methCapture.prompt)
+        verboseBlock('Methodology response', methCapture.response)
+      }
+
       // ── Step 7: Generate files ───────────────────────────────────────────
 
       const projectConfig = defaultProjectConfig()
       const globalConfig  = defaultGlobalConfig()
 
+      // ── Step 7a: Load installed packs ────────────────────────────────────
+      const installedPacks = await loadInstalledPacks(repoRoot)
+
       const generatorInput = {
         fingerprint,
-        installedPackages: [],
+        installedPackages: installedPacks,
         projectConfig,
         globalConfig,
         aiSkills,
