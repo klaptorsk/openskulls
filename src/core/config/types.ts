@@ -62,6 +62,32 @@ export const UserContext = z.object({
 })
 export type UserContext = z.infer<typeof UserContext>
 
+// ─── WorkspaceConfig ──────────────────────────────────────────────────────────
+
+export const WorkspaceEntry = z.object({
+  /** Relative path from repo root, e.g. "packages/api" */
+  path: z.string(),
+  /** Display name — defaults to basename of path */
+  name: z.string().optional(),
+  /** Which generators to enable (defaults to root targets when omitted) */
+  targets: z.array(z.string()).optional(),
+  /** Exclude this workspace from discovery and generation */
+  disabled: z.boolean().default(false),
+})
+export type WorkspaceEntry = z.infer<typeof WorkspaceEntry>
+
+export const WorkspaceConfig = z.object({
+  /** When true, auto-discovery is disabled; only declared entries are used */
+  manual: z.boolean().default(false),
+  /** Explicit workspace declarations (supplements or replaces auto-discovery) */
+  entries: z.array(WorkspaceEntry).default([]),
+  /** Glob-style path prefixes to exclude from auto-discovery */
+  excludePatterns: z.array(z.string()).default([]),
+  /** How deep to scan for workspace manifests (default 3) */
+  maxDepth: z.number().int().min(1).max(6).default(3),
+})
+export type WorkspaceConfig = z.infer<typeof WorkspaceConfig>
+
 export const ProjectConfig = z.object({
   schemaVersion: z.string().default('1.0.0'),
 
@@ -74,6 +100,8 @@ export const ProjectConfig = z.object({
   sync: SyncConfig.default({}),
 
   workflow: WorkflowConfig.default({}),
+
+  workspaces: WorkspaceConfig.optional(),
 
   // Paths excluded from repo analysis
   excludePaths: z.array(z.string()).default([
@@ -121,6 +149,28 @@ export function defaultProjectConfig(): ProjectConfig {
 
 export function defaultGlobalConfig(): GlobalConfig {
   return GlobalConfig.parse({})
+}
+
+/**
+ * Read [repo]/.openskulls/config.toml and extract the [workspaces] section.
+ * Returns undefined if the section is absent or the file is missing.
+ */
+export async function loadWorkspaceConfig(repoRoot: string): Promise<WorkspaceConfig | undefined> {
+  const configPath = join(repoRoot, '.openskulls', 'config.toml')
+  try {
+    const raw = await readFile(configPath, 'utf-8')
+    const parsed = tomlParse(raw) as Record<string, unknown>
+    const ws = parsed['workspaces'] as Record<string, unknown> | undefined
+    if (!ws) return undefined
+    return WorkspaceConfig.parse({
+      manual:          ws['manual'],
+      entries:         ws['entries'],
+      excludePatterns: ws['exclude_patterns'],
+      maxDepth:        ws['max_depth'],
+    })
+  } catch {
+    return undefined
+  }
 }
 
 /**

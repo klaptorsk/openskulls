@@ -14,8 +14,10 @@ import Handlebars from 'handlebars'
 import { skillsForTool } from '../packages/types.js'
 import { type RepoFingerprint } from '../fingerprint/types.js'
 import { type AISkill } from '../fingerprint/skills-builder.js'
+import { buildGuardrailsSection } from '../fingerprint/guardrails-builder.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
 import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines } from './shared.js'
+import { buildWorkspaceMapSection } from './workspace-aggregate.js'
 import { CLAUDE_MD_TEMPLATE } from '../../generated/templates.js'
 
 // ─── Template loading ─────────────────────────────────────────────────────────
@@ -76,6 +78,8 @@ interface TemplateContext {
   isConventionalCommits: boolean
   workflowRules: string
   userAnswerEntries: Array<{ key: string; value: string }>
+  guardrailsSection: string | undefined
+  workspaceSection: string | undefined
 }
 
 // ─── Generator ────────────────────────────────────────────────────────────────
@@ -124,6 +128,12 @@ export class ClaudeCodeGenerator extends BaseGenerator {
       isConventionalCommits: conventionalCommits,
       workflowRules: input.workflowConfig ? buildWorkflowRuleLines(input.workflowConfig).join('\n') : '',
       userAnswerEntries,
+      guardrailsSection: input.architectGuardrails
+        ? buildGuardrailsSection(input.architectGuardrails)
+        : undefined,
+      workspaceSection: input.workspaceMap && input.workspaceMap.length > 0
+        ? buildWorkspaceMapSection([...input.workspaceMap])
+        : undefined,
     }
 
     files.push(repoFile('CLAUDE.md', COMPILED_TEMPLATE(ctx), 'merge_sections'))
@@ -153,12 +163,24 @@ export class ClaudeCodeGenerator extends BaseGenerator {
 
     if (input.aiSkills && input.aiSkills.length > 0) {
       // .claude/skills.md — index grouped by category (merge_sections)
-      files.push(repoFile('.claude/skills.md', buildSkillsOverview(input.aiSkills), 'merge_sections'))
+      files.push(repoFile('.claude/skills.md', buildSkillsOverview(input.aiSkills, input.foreignSkills ?? []), 'merge_sections'))
 
       // Individual SKILL.md files — one directory per skill
       for (const skill of input.aiSkills) {
         files.push(repoFile(`.claude/skills/${skill.id}/SKILL.md`, buildSkillFile(skill)))
       }
+    } else if (input.foreignSkills && input.foreignSkills.length > 0) {
+      const content = [
+        '<!-- openskulls:section:foreign_skills -->',
+        '## Manually Maintained Skills',
+        '',
+        '> These files exist in `.claude/commands/` but are not managed by openskulls.',
+        '',
+        ...input.foreignSkills.map((p) => `- \`${p}\``),
+        '',
+        '<!-- /openskulls:section:foreign_skills -->',
+      ].join('\n')
+      files.push(repoFile('.claude/skills.md', content, 'merge_sections'))
     }
 
     // ── .claude/settings.json ───────────────────────────────────────────────
@@ -222,8 +244,9 @@ export class ClaudeCodeGenerator extends BaseGenerator {
 
 /**
  * Render `.claude/skills.md` — index grouped by category, sorted alphabetically.
+ * When foreignSkills are provided, appends a separate foreign_skills section.
  */
-function buildSkillsOverview(skills: readonly AISkill[]): string {
+function buildSkillsOverview(skills: readonly AISkill[], foreignSkills: readonly string[] = []): string {
   // Group by category
   const groups = new Map<string, AISkill[]>()
   for (const skill of skills) {
@@ -254,6 +277,18 @@ function buildSkillsOverview(skills: readonly AISkill[]): string {
   }
 
   lines.push('', '<!-- /openskulls:section:skills -->')
+
+  if (foreignSkills.length > 0) {
+    lines.push('\n<!-- openskulls:section:foreign_skills -->')
+    lines.push('## Manually Maintained Skills')
+    lines.push('')
+    lines.push('> These files exist in `.claude/commands/` but are not managed by openskulls.')
+    lines.push('')
+    for (const p of foreignSkills) lines.push(`- \`${p}\``)
+    lines.push('')
+    lines.push('<!-- /openskulls:section:foreign_skills -->')
+  }
+
   return lines.join('\n')
 }
 

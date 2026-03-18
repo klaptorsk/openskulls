@@ -149,6 +149,11 @@ All detected languages (with percentages) and frameworks (with categories).
 Style, API type, database, entry points, module structure.
 <!-- /openskulls:section:architecture -->
 
+<!-- openskulls:section:workspace_map -->
+## Workspace Map
+Table of discovered sub-workspaces with language/framework summary. Only present in monorepos.
+<!-- /openskulls:section:workspace_map -->
+
 <!-- openskulls:section:conventions -->
 ## Conventions
 Detected conventions: package manager, TypeScript config, linting tools.
@@ -168,6 +173,11 @@ Platform and deploy targets (only when detected).
 ## Workflow Rules
 Auto-documentation and auto-commit policies (from your init answers).
 <!-- /openskulls:section:workflow_rules -->
+
+<!-- openskulls:section:architect_guardrails -->
+## Architectural Guardrails
+Module ownership, layer rules, placement rules, and forbidden patterns. Generated for complex or monorepo projects.
+<!-- /openskulls:section:architect_guardrails -->
 
 <!-- openskulls:section:agent_guidance -->
 ## Agent Guidance
@@ -236,18 +246,22 @@ openskulls init --verbose       # show AI prompts and raw responses
 **Init flow:**
 
 1. **Analyse repo** — scans file tree, reads config files, invokes `claude -p` for AI analysis
+   - **1a. Discover workspaces** — auto-scans for sub-repos (packages, services, apps); shown as a table if found
+   - **1b. Scan foreign files** — detects existing AI instruction files not managed by openskulls (CLAUDE.md, AGENTS.md, copilot-instructions.md, etc.)
+   - **1c. AI import foreign files** — extracts conventions, rules, and constraints from existing files and folds them into the fingerprint (non-fatal)
 2. **Show detected signals** — languages, frameworks, testing, linting in a table
-3. **Generate contextual questions** — second AI call produces repo-specific questions based on the fingerprint (non-fatal, skipped with `--yes`)
+3. **Generate contextual questions** — AI call produces repo-specific questions based on the fingerprint (non-fatal, skipped with `--yes`)
 4. **Workflow setup** — static questions + AI-generated contextual questions to configure how Claude works in this repo (skipped with `--yes`)
-5. **Generate project skills** — third AI call produces repo-specific slash commands, using your answers as context (non-fatal)
+5. **Generate project skills** — AI call produces repo-specific slash commands, using your answers as context (non-fatal)
 6. **Generate architect skill** — optional AI call that generates a domain-expert architect agent (if enabled in step 4)
 7. **Generate methodology skills** — AI call produces architect, workflow-lifecycle, verify, and tdd skills grounded in the actual project structure (non-fatal)
-8. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
-9. **Show generation plan** — lists every file that will be created or updated
-10. **Confirm** — nothing is written until you approve (skipped with `--yes`)
-11. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
-12. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
-13. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
+8. **Generate architectural guardrails** — AI call produces inline module-ownership rules and placement constraints for complex or monorepo projects (non-fatal)
+9. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint; in a monorepo, per-workspace files are generated first then the root aggregate
+10. **Show generation plan** — lists every file that will be created or updated
+11. **Confirm** — nothing is written until you approve (skipped with `--yes`)
+12. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
+13. **Save baseline** — writes `.openskulls/fingerprint.json`, `.openskulls/config.toml`, and per-workspace `.openskulls/fingerprint.json` files
+14. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
 
 **Verbose mode** (`--verbose` / `-v`): prints the full AI prompt and raw JSON response for every AI call — analysis, questionnaire, skills, and architect. Useful for debugging or understanding what was sent to the model.
 
@@ -324,7 +338,7 @@ tsconfig*.json
 
 ---
 
-## `openskulls audit [path]` _(v0.2)_
+## `openskulls audit [path]` _(planned)_
 
 Check the health of the current context against the repo. Produces a report showing:
 
@@ -462,6 +476,17 @@ exclude_paths = [
   "node_modules", ".git", "dist", "build",
   ".venv", "__pycache__", ".next", ".nuxt", "coverage"
 ]
+
+# Monorepo workspace config (written automatically on init if workspaces discovered)
+[workspaces]
+manual = false            # true = only use declared [[workspaces.entries]]
+max_depth = 3
+exclude_patterns = ["node_modules", "dist", ".git"]
+
+# [[workspaces.entries]]
+# path = "packages/api"
+# name = "API Service"
+# targets = ["claude_code"]
 ```
 
 `workflow.auto_docs` and `workflow.auto_commit` are set during `openskulls init` and drive the `## Workflow Rules` section in `CLAUDE.md`. They can be changed by editing the file and re-running `openskulls sync`.
@@ -608,7 +633,8 @@ For full module structure, data flow diagrams, config file schemas, and an exten
 |---------|-------|
 | **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code, Cursor, Copilot, Codex generators — workflow rules — parallel skill generation — git hook |
 | **v0.2** | Git-native skill packs (`add`, `remove`, `list`) — AI methodology skills (architect, workflow-lifecycle, verify, tdd) — pack skill emission |
-| **v0.3** | `openskulls audit` — `openskulls sync --watch` — monorepo support — pack auto-update on sync |
+| **v0.3** | Architectural guardrails — Monorepo / multi-workspace support — Foreign file inheritance |
+| **v0.4** | `openskulls audit` — `openskulls sync --watch` — pack auto-update on sync |
 | **v1.0** | Platform: org-level context — agent performance metrics — multi-agent profiles |
 
 ---

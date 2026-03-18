@@ -48,6 +48,12 @@
 
 <!-- /openskulls:section:architecture -->
 
+{{#if workspaceSection}}
+<!-- openskulls:section:workspace_map -->
+{{workspaceSection}}
+<!-- /openskulls:section:workspace_map -->
+
+{{/if}}
 <!-- openskulls:section:conventions -->
 ## Conventions
 
@@ -111,6 +117,12 @@ No conventions detected automatically. Add them here manually.
 {{/each}}
 
 <!-- /openskulls:section:user_config -->
+
+{{/if}}
+{{#if guardrailsSection}}
+<!-- openskulls:section:architect_guardrails -->
+{{guardrailsSection}}
+<!-- /openskulls:section:architect_guardrails -->
 
 {{/if}}
 <!-- openskulls:section:agent_guidance -->

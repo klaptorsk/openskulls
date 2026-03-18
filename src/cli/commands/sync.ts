@@ -5,22 +5,24 @@
  *  1. Load fingerprint baseline
  *  2. Re-analyse repo
  *  3. Detect drift → if none, exit early
- *  4. Generate updated files
- *  5. Show plan + confirm
- *  6. Write files + save fingerprint
+ *  3b-3e. Generate skills, architect skill, methodology, guardrails
+ *  4. Workspace loading + fingerprinting (if configured)
+ *  5. Generate files (root + per-workspace)
+ *  6. Show plan + confirm
+ *  7. Write files + save fingerprint + per-workspace fingerprints
  *
  * Hook mode (--hook --changed <files>):
  *  1. Check trigger patterns — skip if no relevant file changed
  *  2. Load baseline — skip silently if missing
  *  3. Analyse + drift check → skip if no drift
- *  4. Write files silently
+ *  4. Write files silently (root + per-workspace)
  *  Always exits 0.
  */
 
 import { confirm, isCancel, cancel } from '@clack/prompts'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { Command } from 'commander'
 import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { loadFingerprint, saveFingerprint } from '../../core/fingerprint/cache.js'
@@ -29,14 +31,20 @@ import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-bu
 import { generateMethodologySkills } from '../../core/fingerprint/methodology-builder.js'
 import { loadInstalledPacks } from '../../core/packages/loader.js'
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
-import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
+import { generateArchitectGuardrails, isComplexProject, type ArchitectGuardrails } from '../../core/fingerprint/guardrails-builder.js'
+import { resolveFilePath, type GeneratedFile, type WorkspaceMapEntry } from '../../core/generators/base.js'
 import { selectGenerators } from '../../core/generators/registry.js'
-import { defaultProjectConfig, defaultGlobalConfig, loadWorkflowConfig } from '../../core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig, loadWorkflowConfig, loadWorkspaceConfig } from '../../core/config/types.js'
 import {
   divider, fatal, fileList, heading, log, spinner, verboseBlock,
 } from '../ui/console.js'
 import { writeGeneratedFile } from './shared.js'
 import { shouldTriggerSync } from './hook.js'
+import { discoverWorkspaces } from '../../core/fingerprint/workspace-discovery.js'
+import { collectWorkspaceFingerprints, buildAggregateFingerprint, toWorkspaceMapEntries } from '../../core/fingerprint/workspace-collector.js'
+import { loadAllWorkspaceFingerprints, saveWorkspaceFingerprint } from '../../core/fingerprint/workspace-cache.js'
+import { scanForeignFiles } from '../../core/fingerprint/foreign-file-detector.js'
+import type { WorkspaceFingerprint } from '../../core/fingerprint/workspace-types.js'
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
@@ -100,6 +108,13 @@ async function interactiveMode(
 
   const workflowConfig = await loadWorkflowConfig(repoRoot)
 
+  // Load workspace config and per-workspace baselines
+  const wsConfig = await loadWorkspaceConfig(repoRoot)
+  const wsEntries = wsConfig ? await discoverWorkspaces(repoRoot, wsConfig) : []
+  const wsBaselines = wsEntries.length > 0
+    ? await loadAllWorkspaceFingerprints(repoRoot, wsEntries.map((e) => e.path))
+    : new Map()
+
   // ── Step 2: Analyse ──────────────────────────────────────────────────────
 
   const spin = spinner('Analysing repository…').start()
@@ -128,7 +143,12 @@ async function interactiveMode(
 
   // ── Step 3: Drift check ──────────────────────────────────────────────────
 
-  if (!hasDrifted(fingerprint, baseline)) {
+  const rootDrifted = hasDrifted(fingerprint, baseline)
+
+  // Check workspace drift too
+  const anyWsDrift = wsBaselines.size > 0 && [...wsBaselines.values()].some((b) => b === null)
+
+  if (!rootDrifted && !anyWsDrift) {
     log.success('Context is up to date.')
     process.exit(0)
   }
@@ -200,13 +220,75 @@ async function interactiveMode(
     verboseBlock('Methodology response', methCapture.response)
   }
 
-  // ── Step 4: Generate files ───────────────────────────────────────────────
+  // ── Step 3e: Architect guardrails (complex projects only) ────────────────
+
+  let architectGuardrails: ArchitectGuardrails | undefined
+  let workspaces: WorkspaceFingerprint[] = []
+  let workspaceMap: WorkspaceMapEntry[] | undefined
+
+  // ── Step 4: Workspace fingerprinting (if configured) ─────────────────────
+
+  if (wsEntries.length > 0) {
+    const wsSpin = spinner(`Analysing ${wsEntries.length} workspace(s)…`).start()
+    try {
+      const { results, errors } = await collectWorkspaceFingerprints(
+        repoRoot,
+        wsEntries,
+        // sync has no adapter, use default detection
+        await (async () => {
+          const { detectAICLI } = await import('../../core/fingerprint/ai-collector.js')
+          return detectAICLI()
+        })(),
+        { useParallel: workflowConfig.useSubagents },
+      )
+      workspaces = results
+      if (errors.size > 0) {
+        for (const [wsPath, msg] of errors) {
+          log.warn(`  ${wsPath}: ${msg}`)
+        }
+      }
+      wsSpin.succeed(`Analysed ${workspaces.length} workspace(s)`)
+
+      if (workspaces.length > 0) {
+        fingerprint = buildAggregateFingerprint(repoRoot, workspaces, fingerprint.description)
+        workspaceMap = toWorkspaceMapEntries(workspaces)
+      }
+    } catch (err) {
+      wsSpin.warn('Workspace analysis failed — using root fingerprint only')
+      log.info(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  if (isComplexProject(fingerprint)) {
+    const guardrailsSpin = spinner('Generating architectural guardrails…').start()
+    const guardrailsCapture = { prompt: '', response: '' }
+    try {
+      const guardrailsLogger: VerboseLogger = {
+        onPrompt:   (p) => { guardrailsCapture.prompt = p },
+        onResponse: (r) => { guardrailsCapture.response = r },
+      }
+      architectGuardrails = await generateArchitectGuardrails(fingerprint, guardrailsLogger, undefined, workspaceMap)
+      guardrailsSpin.succeed('Generated architectural guardrails')
+    } catch (err) {
+      guardrailsSpin.warn('Could not generate guardrails — skipping')
+      log.info(err instanceof Error ? err.message : String(err))
+    }
+    if (options.verbose) {
+      verboseBlock('Guardrails prompt', guardrailsCapture.prompt)
+      verboseBlock('Guardrails response', guardrailsCapture.response)
+    }
+  }
+
+  // ── Step 5: Generate files ───────────────────────────────────────────────
 
   const projectConfig = defaultProjectConfig()
   const globalConfig  = defaultGlobalConfig()
 
   // TODO(v1.1): git pull on installed packs during sync
   const installedPacks = await loadInstalledPacks(repoRoot)
+
+  // Scan for foreign skills at root
+  const foreignScan = await scanForeignFiles(repoRoot)
 
   const generatorInput = {
     fingerprint,
@@ -215,25 +297,55 @@ async function interactiveMode(
     globalConfig,
     aiSkills,
     workflowConfig,
+    architectGuardrails,
+    workspaceMap: workspaceMap ?? undefined,
+    foreignSkills: foreignScan.foreignSkills.length > 0 ? foreignScan.foreignSkills : undefined,
   }
 
   const activeTools = new Set(['claude_code', ...fingerprint.aiCLIs.map((a) => a.tool)])
   const generatedFiles: GeneratedFile[] = selectGenerators(activeTools)
     .flatMap((g) => g.generate(generatorInput))
 
-  // ── Step 5: Show plan ────────────────────────────────────────────────────
+  const homeDir = homedir()
+
+  // Build combined plan (root + per-workspace)
+  const allGeneratedFiles: Array<{ file: GeneratedFile; absPath: string; action: 'create' | 'update'; workspaceLabel?: string }> = []
+
+  for (const f of generatedFiles) {
+    const absPath = resolveFilePath(f, repoRoot, homeDir)
+    const action: 'create' | 'update' = existsSync(absPath) ? 'update' : 'create'
+    allGeneratedFiles.push({ file: f, absPath, action })
+  }
+
+  for (const ws of workspaces) {
+    const wsRoot = join(repoRoot, ws.path)
+    const wsForeignScan = await scanForeignFiles(wsRoot)
+    const wsGeneratorInput = {
+      fingerprint: ws.fingerprint,
+      installedPackages: installedPacks,
+      projectConfig,
+      globalConfig,
+      aiSkills: [],
+      workflowConfig,
+      foreignSkills: wsForeignScan.foreignSkills.length > 0 ? wsForeignScan.foreignSkills : undefined,
+    }
+    const wsFiles = selectGenerators(activeTools).flatMap((g) => g.generate(wsGeneratorInput))
+    for (const f of wsFiles) {
+      const absPath = resolveFilePath(f, wsRoot, homeDir)
+      const action: 'create' | 'update' = existsSync(absPath) ? 'update' : 'create'
+      allGeneratedFiles.push({ file: f, absPath, action, workspaceLabel: ws.name })
+    }
+  }
+
+  // ── Step 6: Show plan ────────────────────────────────────────────────────
 
   log.blank()
   heading('Generation plan')
 
-  const homeDir = homedir()
-  const plan = generatedFiles.map((f) => {
-    const absPath = resolveFilePath(f, repoRoot, homeDir)
-    const action: 'create' | 'update' = existsSync(absPath) ? 'update' : 'create'
-    return { file: f, absPath, action }
-  })
-
-  fileList(plan.map((p) => ({ path: p.absPath, action: p.action })))
+  fileList(allGeneratedFiles.map((p) => ({
+    path: p.workspaceLabel ? `[${p.workspaceLabel}] ${p.absPath}` : p.absPath,
+    action: p.action,
+  })))
   log.blank()
 
   if (options.dryRun) {
@@ -246,15 +358,19 @@ async function interactiveMode(
     if (isCancel(go) || go === false) { cancel('Aborted.'); process.exit(0) }
   }
 
-  // ── Step 6: Write + save ─────────────────────────────────────────────────
+  // ── Step 7: Write + save ─────────────────────────────────────────────────
 
   log.blank()
-  for (const { file, absPath, action } of plan) {
+  for (const { file, absPath, action } of allGeneratedFiles) {
     await writeGeneratedFile(file, absPath)
     log.success(`${action === 'create' ? 'Created' : 'Updated'} ${absPath}`)
   }
 
   await saveFingerprint(repoRoot, fingerprint)
+
+  for (const ws of workspaces) {
+    await saveWorkspaceFingerprint(repoRoot, ws.path, ws.fingerprint)
+  }
 
   log.blank()
   divider()
@@ -282,9 +398,13 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
 
     const workflowConfig = await loadWorkflowConfig(repoRoot)
 
+    // Load workspace config
+    const wsConfig = await loadWorkspaceConfig(repoRoot)
+    const wsEntries = wsConfig ? await discoverWorkspaces(repoRoot, wsConfig) : []
+
     // Analyse
     const collector = new AIFingerprintCollector()
-    const fingerprint = await collector.collect(repoRoot)
+    let fingerprint = await collector.collect(repoRoot)
 
     // Drift check
     if (!hasDrifted(fingerprint, baseline)) {
@@ -318,12 +438,60 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       // Skip silently in hook mode
     }
 
+    // Workspace fingerprinting (non-fatal)
+    let workspaces: WorkspaceFingerprint[] = []
+    let workspaceMap: WorkspaceMapEntry[] | undefined
+
+    if (wsEntries.length > 0) {
+      try {
+        const { detectAICLI } = await import('../../core/fingerprint/ai-collector.js')
+        const adapter = await detectAICLI()
+        const { results } = await collectWorkspaceFingerprints(repoRoot, wsEntries, adapter, { useParallel: workflowConfig.useSubagents })
+        workspaces = results
+        if (workspaces.length > 0) {
+          fingerprint = buildAggregateFingerprint(repoRoot, workspaces, fingerprint.description)
+          workspaceMap = toWorkspaceMapEntries(workspaces)
+        }
+      } catch {
+        // Skip silently in hook mode
+      }
+    }
+
+    // Architect guardrails (non-fatal)
+    let architectGuardrails: ArchitectGuardrails | undefined
+    if (isComplexProject(fingerprint)) {
+      try {
+        architectGuardrails = await generateArchitectGuardrails(fingerprint, undefined, undefined, workspaceMap)
+      } catch {
+        // Skip silently in hook mode
+      }
+    }
+
+    // Scan for foreign skills (non-fatal)
+    let foreignSkills: string[] | undefined
+    try {
+      const foreignScan = await scanForeignFiles(repoRoot)
+      if (foreignScan.foreignSkills.length > 0) foreignSkills = foreignScan.foreignSkills
+    } catch {
+      // Skip silently in hook mode
+    }
+
     // Generate + write silently
     const projectConfig = defaultProjectConfig()
     const globalConfig  = defaultGlobalConfig()
     // TODO(v1.1): git pull on installed packs during sync
     const installedPacks = await loadInstalledPacks(repoRoot)
-    const generatorInput = { fingerprint, installedPackages: installedPacks, projectConfig, globalConfig, aiSkills, workflowConfig }
+    const generatorInput = {
+      fingerprint,
+      installedPackages: installedPacks,
+      projectConfig,
+      globalConfig,
+      aiSkills,
+      workflowConfig,
+      architectGuardrails,
+      workspaceMap: workspaceMap ?? undefined,
+      foreignSkills,
+    }
     const activeTools = new Set(['claude_code', ...fingerprint.aiCLIs.map((a) => a.tool)])
     const generatedFiles: GeneratedFile[] = selectGenerators(activeTools)
       .flatMap((g) => g.generate(generatorInput))
@@ -332,6 +500,33 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     for (const file of generatedFiles) {
       const absPath = resolveFilePath(file, repoRoot, homeDir)
       await writeGeneratedFile(file, absPath)
+    }
+
+    // Per-workspace files
+    for (const ws of workspaces) {
+      const wsRoot = join(repoRoot, ws.path)
+      let wsForeignSkills: string[] | undefined
+      try {
+        const wsForeignScan = await scanForeignFiles(wsRoot)
+        if (wsForeignScan.foreignSkills.length > 0) wsForeignSkills = wsForeignScan.foreignSkills
+      } catch {
+        // Skip silently
+      }
+      const wsGeneratorInput = {
+        fingerprint: ws.fingerprint,
+        installedPackages: installedPacks,
+        projectConfig,
+        globalConfig,
+        aiSkills: [],
+        workflowConfig,
+        foreignSkills: wsForeignSkills,
+      }
+      const wsFiles = selectGenerators(activeTools).flatMap((g) => g.generate(wsGeneratorInput))
+      for (const file of wsFiles) {
+        const absPath = resolveFilePath(file, wsRoot, homeDir)
+        await writeGeneratedFile(file, absPath)
+      }
+      await saveWorkspaceFingerprint(repoRoot, ws.path, ws.fingerprint)
     }
 
     await saveFingerprint(repoRoot, fingerprint)

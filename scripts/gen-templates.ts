@@ -14,12 +14,14 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')) as { version: string }
 
 const TEMPLATES: Record<string, string> = {
-  ANALYSIS:      join(ROOT, 'templates/prompts/analysis.md.hbs'),
-  SKILLS:        join(ROOT, 'templates/prompts/skills.md.hbs'),
-  QUESTIONNAIRE: join(ROOT, 'templates/prompts/questionnaire.md.hbs'),
-  ARCHITECT:     join(ROOT, 'templates/prompts/architect.md.hbs'),
-  METHODOLOGY:   join(ROOT, 'templates/prompts/methodology.md.hbs'),
-  CLAUDE_MD:     join(ROOT, 'templates/claude-code/CLAUDE.md.hbs'),
+  ANALYSIS:             join(ROOT, 'templates/prompts/analysis.md.hbs'),
+  SKILLS:               join(ROOT, 'templates/prompts/skills.md.hbs'),
+  QUESTIONNAIRE:        join(ROOT, 'templates/prompts/questionnaire.md.hbs'),
+  ARCHITECT:            join(ROOT, 'templates/prompts/architect.md.hbs'),
+  METHODOLOGY:          join(ROOT, 'templates/prompts/methodology.md.hbs'),
+  GUARDRAILS:           join(ROOT, 'templates/prompts/guardrails.md.hbs'),
+  FOREIGN_FILE_IMPORT:  join(ROOT, 'templates/prompts/foreign-file-import.md.hbs'),
+  CLAUDE_MD:            join(ROOT, 'templates/claude-code/CLAUDE.md.hbs'),
 }
 
 const outDir = join(ROOT, 'src/generated')

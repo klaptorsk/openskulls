@@ -10,8 +10,11 @@
 import type { WorkflowConfig } from '../config/types.js'
 import type { RepoFingerprint } from '../fingerprint/types.js'
 import type { AISkill } from '../fingerprint/skills-builder.js'
+import type { WorkspaceMapEntry } from '../fingerprint/workspace-types.js'
+import { buildGuardrailsSection, type ArchitectGuardrails } from '../fingerprint/guardrails-builder.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
 import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines } from './shared.js'
+import { buildWorkspaceMapSection } from './workspace-aggregate.js'
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
@@ -21,7 +24,7 @@ export class CodexGenerator extends BaseGenerator {
   override readonly detectionFiles = ['AGENTS.md'] as const
 
   generate(input: GeneratorInput): GeneratedFile[] {
-    const content = buildAgentsMd(input.fingerprint, input.workflowConfig, input.aiSkills)
+    const content = buildAgentsMd(input.fingerprint, input.workflowConfig, input.aiSkills, input.architectGuardrails, input.workspaceMap ? [...input.workspaceMap] : undefined)
     return [repoFile('AGENTS.md', content, 'merge_sections')]
   }
 }
@@ -32,6 +35,8 @@ export function buildAgentsMd(
   fp: RepoFingerprint,
   workflow?: WorkflowConfig,
   aiSkills?: readonly AISkill[],
+  guardrails?: ArchitectGuardrails,
+  workspaceMap?: WorkspaceMapEntry[],
 ): string {
   const lines: string[] = []
 
@@ -94,6 +99,15 @@ export function buildAgentsMd(
     lines.push('')
   }
 
+  // ── Workspace map ────────────────────────────────────────────────────────────
+
+  if (workspaceMap && workspaceMap.length > 0) {
+    lines.push('<!-- openskulls:section:workspace_map -->')
+    lines.push(buildWorkspaceMapSection(workspaceMap))
+    lines.push('<!-- /openskulls:section:workspace_map -->')
+    lines.push('')
+  }
+
   // ── Conventions ─────────────────────────────────────────────────────────────
 
   const detectedConventions = fp.conventions.filter((c) => c.value !== undefined)
@@ -138,6 +152,15 @@ export function buildAgentsMd(
       lines.push('<!-- /openskulls:section:workflow_rules -->')
       lines.push('')
     }
+  }
+
+  // ── Architect guardrails ─────────────────────────────────────────────────────
+
+  if (guardrails) {
+    lines.push('<!-- openskulls:section:architect_guardrails -->')
+    lines.push(buildGuardrailsSection(guardrails))
+    lines.push('<!-- /openskulls:section:architect_guardrails -->')
+    lines.push('')
   }
 
   // ── Skills ──────────────────────────────────────────────────────────────────

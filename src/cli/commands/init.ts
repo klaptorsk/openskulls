@@ -2,18 +2,24 @@
  * openskulls init — first-time setup for a repository.
  *
  * Flow:
- *  1. Analyse repo with AIFingerprintCollector
- *  2. Show detected signals
- *  3. Generate AI questionnaire (repo-specific questions from fingerprint)
- *  4. Run interviewer (static workflow Qs + dynamic AI Qs)
- *  5. Generate AI skills (with user answers)
- *  6. Generate architect skill if enabled (with user answers)
- *  7. Run generators → GeneratedFile[]
- *  8. Show generation plan (what will be written)
- *  9. Confirm (skip with --yes)
- * 10. Write files (merge_sections for CLAUDE.md, replace otherwise)
- * 11. Save fingerprint.json and config.toml (includes qa answers)
- * 12. Install git hook
+ *  1.  Analyse repo with AIFingerprintCollector
+ *  1a. Discover workspaces (monorepo detection)
+ *  1b. Scan for foreign AI instruction files
+ *  1c. Import foreign files via AI (non-fatal)
+ *  2.  Show detected signals
+ *  3.  Generate AI questionnaire (repo-specific questions from fingerprint)
+ *  4.  Run interviewer (static workflow Qs + dynamic AI Qs)
+ *  5.  Generate AI skills (with user answers)
+ *  5b. Generate methodology skills
+ *  5c. Fingerprint workspaces (if discovered)
+ *  6.  Generate architect skill if enabled (with user answers)
+ *  7.  Run generators → GeneratedFile[]
+ *  7b. Generate per-workspace files
+ *  8.  Show generation plan (what will be written)
+ *  9.  Confirm (skip with --yes)
+ * 10.  Write files (merge_sections for CLAUDE.md, replace otherwise)
+ * 11.  Save fingerprint.json, per-workspace fingerprints, and config.toml (includes qa answers)
+ * 12.  Install git hook
  */
 
 import { intro, outro, confirm, isCancel, cancel } from '@clack/prompts'
@@ -31,16 +37,23 @@ import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-bu
 import { generateMethodologySkills } from '../../core/fingerprint/methodology-builder.js'
 import { loadInstalledPacks } from '../../core/packages/loader.js'
 import { generateArchitectSkill } from '../../core/fingerprint/architect-builder.js'
+import { generateArchitectGuardrails, isComplexProject, type ArchitectGuardrails } from '../../core/fingerprint/guardrails-builder.js'
 import { generateQuestionnaire, type AIQuestion } from '../../core/fingerprint/questionnaire-builder.js'
-import { resolveFilePath, type GeneratedFile } from '../../core/generators/base.js'
+import { resolveFilePath, type GeneratedFile, type WorkspaceMapEntry } from '../../core/generators/base.js'
 import { selectGenerators } from '../../core/generators/registry.js'
-import { defaultProjectConfig, defaultGlobalConfig } from '../../core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig, loadWorkspaceConfig } from '../../core/config/types.js'
 import {
   printBanner, divider, fatal, fileList, heading, log, spinner, subheading, table, verboseBlock,
 } from '../ui/console.js'
 import { writeGeneratedFile } from './shared.js'
 import { installGitHook } from './hook.js'
 import { runInterviewer } from './interviewer.js'
+import { discoverWorkspaces } from '../../core/fingerprint/workspace-discovery.js'
+import { collectWorkspaceFingerprints, buildAggregateFingerprint, toWorkspaceMapEntries } from '../../core/fingerprint/workspace-collector.js'
+import { saveWorkspaceFingerprint } from '../../core/fingerprint/workspace-cache.js'
+import { scanForeignFiles } from '../../core/fingerprint/foreign-file-detector.js'
+import { importForeignFiles, mergeForeignContextIntoQA } from '../../core/fingerprint/foreign-file-importer.js'
+import type { WorkspaceFingerprint } from '../../core/fingerprint/workspace-types.js'
 
 // ─── Command ──────────────────────────────────────────────────────────────────
 
@@ -125,6 +138,46 @@ Examples:
       if (options.verbose) {
         verboseBlock('Analysis prompt', analysisCapture.prompt)
         verboseBlock('Analysis response', analysisCapture.response)
+      }
+
+      // ── Step 1a: Discover workspaces ─────────────────────────────────────
+
+      let workspaces: WorkspaceFingerprint[] = []
+      let workspaceMap: WorkspaceMapEntry[] | undefined
+
+      const wsConfig = await loadWorkspaceConfig(repoRoot)
+      const discoveredEntries = await discoverWorkspaces(repoRoot, wsConfig ?? { manual: false, entries: [], excludePatterns: [], maxDepth: 3 })
+
+      if (discoveredEntries.length > 0) {
+        log.blank()
+        subheading(`Workspaces detected (${discoveredEntries.length})`)
+        table(discoveredEntries.map((w) => [w.name ?? w.path, w.path]))
+      }
+
+      // ── Step 1b: Scan for foreign AI instruction files ─────────────────
+
+      const foreignScan = await scanForeignFiles(repoRoot)
+      if (foreignScan.foreignFiles.length > 0) {
+        log.blank()
+        subheading('Existing AI instruction files detected')
+        for (const f of foreignScan.foreignFiles) {
+          log.info(`  ${f.path} — will preserve manual content`)
+        }
+      }
+
+      // ── Step 1c: Import foreign files ──────────────────────────────────
+
+      let foreignQASeed: Record<string, string> = {}
+      if (foreignScan.foreignFiles.length > 0) {
+        const importSpin = spinner('Importing existing AI instruction files…').start()
+        try {
+          const enriched = await importForeignFiles(foreignScan.foreignFiles, adapter)
+          foreignQASeed = mergeForeignContextIntoQA(enriched)
+          importSpin.succeed(`Imported ${foreignScan.foreignFiles.length} existing instruction file(s)`)
+        } catch (err) {
+          importSpin.warn('Could not import existing files — skipping')
+          log.info(err instanceof Error ? err.message : String(err))
+        }
       }
 
       // ── Step 2: Show detected signals ────────────────────────────────────
@@ -223,6 +276,10 @@ Examples:
       const userContext = await runInterviewer({ yes: options.yes }, aiQuestions)
       const { workflowConfig, qa } = userContext
 
+      // Merge foreign file knowledge into qa (foreign context enriches AI calls)
+      const enrichedQA = { ...foreignQASeed, ...qa }
+      const qaArg = Object.keys(enrichedQA).length > 0 ? enrichedQA : undefined
+
       // ── Steps 5+6: Generate skills (and optionally architect) ────────────
       //   Sequential by default; parallel when useSubagents + architectEnabled.
 
@@ -237,7 +294,6 @@ Examples:
         onPrompt:   (p) => { archCapture.prompt = p },
         onResponse: (r) => { archCapture.response = r },
       }
-      const qaArg = Object.keys(qa).length > 0 ? qa : undefined
 
       if (workflowConfig.useSubagents && workflowConfig.architectEnabled) {
         // ── Parallel path ────────────────────────────────────────────────────
@@ -319,6 +375,59 @@ Examples:
         verboseBlock('Methodology response', methCapture.response)
       }
 
+      // ── Step 5c: Fingerprint workspaces ──────────────────────────────────
+
+      if (discoveredEntries.length > 0) {
+        const wsSpin = spinner(`Analysing ${discoveredEntries.length} workspace(s)…`).start()
+        try {
+          const { results, errors } = await collectWorkspaceFingerprints(
+            repoRoot,
+            discoveredEntries,
+            adapter,
+            { useParallel: workflowConfig.useSubagents },
+          )
+          workspaces = results
+          if (errors.size > 0) {
+            for (const [wsPath, msg] of errors) {
+              log.warn(`  ${wsPath}: ${msg}`)
+            }
+          }
+          wsSpin.succeed(`Analysed ${workspaces.length} workspace(s)`)
+
+          // Replace root fingerprint with aggregate when we have workspace data
+          if (workspaces.length > 0) {
+            fingerprint = buildAggregateFingerprint(repoRoot, workspaces, fingerprint.description)
+            workspaceMap = toWorkspaceMapEntries(workspaces)
+          }
+        } catch (err) {
+          wsSpin.warn('Workspace analysis failed — using root fingerprint only')
+          log.info(err instanceof Error ? err.message : String(err))
+        }
+      }
+
+      // ── Step 5d: Generate architect guardrails (complex projects only) ────
+
+      let architectGuardrails: ArchitectGuardrails | undefined
+      if (isComplexProject(fingerprint)) {
+        const guardrailsSpin = spinner('Generating architectural guardrails…').start()
+        const guardrailsCapture = { prompt: '', response: '' }
+        try {
+          const guardrailsLogger: VerboseLogger = {
+            onPrompt:   (p) => { guardrailsCapture.prompt = p },
+            onResponse: (r) => { guardrailsCapture.response = r },
+          }
+          architectGuardrails = await generateArchitectGuardrails(fingerprint, guardrailsLogger, qaArg, workspaceMap ?? undefined)
+          guardrailsSpin.succeed('Generated architectural guardrails')
+        } catch (err) {
+          guardrailsSpin.warn('Could not generate guardrails — skipping')
+          log.info(err instanceof Error ? err.message : String(err))
+        }
+        if (options.verbose) {
+          verboseBlock('Guardrails prompt', guardrailsCapture.prompt)
+          verboseBlock('Guardrails response', guardrailsCapture.response)
+        }
+      }
+
       // ── Step 7: Generate files ───────────────────────────────────────────
 
       const projectConfig = defaultProjectConfig()
@@ -334,7 +443,10 @@ Examples:
         globalConfig,
         aiSkills,
         workflowConfig,
-        userAnswers: Object.keys(qa).length > 0 ? qa : undefined,
+        userAnswers: Object.keys(enrichedQA).length > 0 ? enrichedQA : undefined,
+        architectGuardrails,
+        workspaceMap: workspaceMap ?? undefined,
+        foreignSkills: foreignScan.foreignSkills.length > 0 ? foreignScan.foreignSkills : undefined,
       }
 
       // Union of: user-selected tools + any AI tools already configured in the repo
@@ -348,19 +460,49 @@ Examples:
 
       const detectedTools = [...toolsToGenerate]
 
+      // ── Step 7b: Generate per-workspace files ────────────────────────────
+
+      const homeDir = homedir()
+
+      const allGeneratedFiles: Array<{ file: GeneratedFile; absPath: string; action: 'create' | 'update'; workspaceLabel?: string }> = []
+
+      // Root files
+      for (const f of generatedFiles) {
+        const absPath = resolveFilePath(f, repoRoot, homeDir)
+        const action: 'create' | 'update' = existsSync(absPath) ? 'update' : 'create'
+        allGeneratedFiles.push({ file: f, absPath, action })
+      }
+
+      // Per-workspace files
+      for (const ws of workspaces) {
+        const wsRoot = join(repoRoot, ws.path)
+        const wsForeignScan = await scanForeignFiles(wsRoot)
+        const wsGeneratorInput = {
+          fingerprint: ws.fingerprint,
+          installedPackages: installedPacks,
+          projectConfig,
+          globalConfig,
+          aiSkills: [],  // workspace skills generation is future scope
+          workflowConfig,
+          foreignSkills: wsForeignScan.foreignSkills.length > 0 ? wsForeignScan.foreignSkills : undefined,
+        }
+        const wsFiles = selectGenerators(toolsToGenerate).flatMap((g) => g.generate(wsGeneratorInput))
+        for (const f of wsFiles) {
+          const absPath = resolveFilePath(f, wsRoot, homeDir)
+          const action: 'create' | 'update' = existsSync(absPath) ? 'update' : 'create'
+          allGeneratedFiles.push({ file: f, absPath, action, workspaceLabel: ws.name })
+        }
+      }
+
       // ── Step 8: Show generation plan ─────────────────────────────────────
 
       log.blank()
       heading('Generation plan')
 
-      const homeDir = homedir()
-      const plan = generatedFiles.map((f) => {
-        const absPath = resolveFilePath(f, repoRoot, homeDir)
-        const action: 'create' | 'update' = existsSync(absPath) ? 'update' : 'create'
-        return { file: f, absPath, action }
-      })
-
-      fileList(plan.map((p) => ({ path: p.absPath, action: p.action })))
+      fileList(allGeneratedFiles.map((p) => ({
+        path: p.workspaceLabel ? `[${p.workspaceLabel}] ${p.absPath}` : p.absPath,
+        action: p.action,
+      })))
       log.blank()
 
       if (options.dryRun) {
@@ -378,7 +520,7 @@ Examples:
       // ── Step 10: Write files ─────────────────────────────────────────────
 
       log.blank()
-      for (const { file, absPath, action } of plan) {
+      for (const { file, absPath, action } of allGeneratedFiles) {
         await writeGeneratedFile(file, absPath)
         log.success(`${action === 'create' ? 'Created' : 'Updated'} ${absPath}`)
       }
@@ -388,7 +530,11 @@ Examples:
       await saveFingerprint(repoRoot, fingerprint)
       log.success(`Saved .openskulls/fingerprint.json`)
 
-      await saveConfig(repoRoot, workflowConfig, detectedTools, qa)
+      for (const ws of workspaces) {
+        await saveWorkspaceFingerprint(repoRoot, ws.path, ws.fingerprint)
+      }
+
+      await saveConfig(repoRoot, workflowConfig, detectedTools, enrichedQA, discoveredEntries)
       log.success(`Saved .openskulls/config.toml`)
 
       // ── Step 12: Install git hook ─────────────────────────────────────────
@@ -447,6 +593,7 @@ async function saveConfig(
   workflowConfig: import('../../core/config/types.js').WorkflowConfig,
   detectedTools: string[],
   qa: Record<string, string>,
+  discoveredEntries: import('../../core/config/types.js').WorkspaceEntry[],
 ): Promise<void> {
   const configPath = join(repoRoot, '.openskulls', 'config.toml')
   const targets = ALL_TARGETS.map((name) => ({
@@ -469,6 +616,14 @@ async function saveConfig(
       use_subagents:     workflowConfig.useSubagents,
       ...(Object.keys(qa).length > 0 ? { answers: qa } : {}),
     },
+    ...(discoveredEntries.length > 0 ? {
+      workspaces: {
+        manual: false,
+        max_depth: 3,
+        exclude_patterns: [] as string[],
+        entries: discoveredEntries.map((e) => ({ path: e.path, name: e.name ?? e.path })),
+      },
+    } : {}),
   }
   await mkdir(dirname(configPath), { recursive: true })
   await writeFile(configPath, tomlStringify(configData), 'utf-8')

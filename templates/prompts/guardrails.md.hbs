@@ -1,0 +1,60 @@
+{{!--
+  Guardrails prompt — sent to the AI CLI to generate architectural guardrails
+  for large/complex projects.
+
+  Template variables (Handlebars triple-brace = unescaped):
+    {{{projectSummary}}} — key-value lines assembled from the RepoFingerprint
+
+  Returns ArchitectGuardrails JSON for embedding in AI instruction files.
+--}}
+You are generating architectural guardrails for a complex software project. These guardrails will be embedded directly into AI coding assistant instruction files (CLAUDE.md, AGENTS.md, etc.) to prevent AI agents from placing code in the wrong modules. Return ONLY a JSON object — no explanation, no markdown fences, no commentary.
+
+Project context:
+{{{projectSummary}}}
+
+Generate strict architectural guardrails that enforce WHERE code should be placed. Focus on:
+1. Which module/directory owns which type of logic
+2. Layer constraints (what can import from what)
+3. Concrete placement rules for new features, types, utilities, tests
+
+The JSON must match this schema exactly:
+
+{
+  "summary": "One sentence describing the architectural constraint system.",
+  "moduleOwnership": [
+    {
+      "path": "src/core/fingerprint/",
+      "responsibility": "AI fingerprint collection and repo analysis",
+      "owns": ["AIFingerprintCollector", "analysis prompts", "fingerprint schema"],
+      "forbidden": ["file writes", "CLI output", "generator logic"]
+    }
+  ],
+  "layerRules": [
+    "CLI layer (src/cli/) must never import from generators directly — use GeneratorInput interface",
+    "Generators must never write to disk — return GeneratedFile[] only"
+  ],
+  "placementRules": [
+    "New CLI commands go in src/cli/commands/ and must be registered in src/index.ts",
+    "New fingerprint fields go in src/core/fingerprint/types.ts with Zod schema"
+  ],
+  "forbidden": [
+    "Business logic in CLI command handlers — delegate to core/ modules",
+    "Filesystem access in generator classes — generators must be pure functions"
+  ]
+}
+
+Field rules:
+- "summary": exactly one sentence describing the architectural constraint system
+- "moduleOwnership": array of 3-8 entries, one per significant module/directory. Use REAL paths from the project context.
+- "moduleOwnership[].path": the actual directory path (e.g. "src/core/fingerprint/")
+- "moduleOwnership[].responsibility": what this module is responsible for, in 5-10 words
+- "moduleOwnership[].owns": 2-5 specific types of code/logic that belong here
+- "moduleOwnership[].forbidden": 2-4 types of code/logic that must NOT be placed here
+- "layerRules": 3-6 concrete import and dependency rules between layers
+- "placementRules": 4-8 specific rules about where new code should go. Start each with the entity type ("New X goes in Y")
+- "forbidden": 3-6 anti-patterns to explicitly forbid — make them specific to this codebase
+- Use REAL file paths and module names from the project context
+- Keep rules actionable and precise — these are injected directly into AI instructions
+- If the project is a monorepo (workspaces are listed above), include workspace boundary rules: which workspace owns which domain, and that each workspace must not create files in sibling workspaces
+
+Return only the JSON object. No markdown fences. No explanation.

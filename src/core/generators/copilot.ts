@@ -9,8 +9,11 @@
 
 import type { WorkflowConfig } from '../config/types.js'
 import type { RepoFingerprint } from '../fingerprint/types.js'
+import type { WorkspaceMapEntry } from '../fingerprint/workspace-types.js'
+import { buildGuardrailsSection, type ArchitectGuardrails } from '../fingerprint/guardrails-builder.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
 import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines } from './shared.js'
+import { buildWorkspaceMapSection } from './workspace-aggregate.js'
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
@@ -20,7 +23,7 @@ export class CopilotGenerator extends BaseGenerator {
   override readonly detectionFiles = ['.github/copilot-instructions.md'] as const
 
   generate(input: GeneratorInput): GeneratedFile[] {
-    const content = buildCopilotInstructions(input.fingerprint, input.workflowConfig)
+    const content = buildCopilotInstructions(input.fingerprint, input.workflowConfig, input.architectGuardrails, input.workspaceMap ? [...input.workspaceMap] : undefined)
     return [repoFile('.github/copilot-instructions.md', content, 'merge_sections')]
   }
 }
@@ -30,6 +33,8 @@ export class CopilotGenerator extends BaseGenerator {
 export function buildCopilotInstructions(
   fp: RepoFingerprint,
   workflow?: WorkflowConfig,
+  guardrails?: ArchitectGuardrails,
+  workspaceMap?: WorkspaceMapEntry[],
 ): string {
   const lines: string[] = []
 
@@ -117,6 +122,24 @@ export function buildCopilotInstructions(
       lines.push('<!-- /openskulls:section:workflow_rules -->')
       lines.push('')
     }
+  }
+
+  // ── Workspace map ────────────────────────────────────────────────────────────
+
+  if (workspaceMap && workspaceMap.length > 0) {
+    lines.push('<!-- openskulls:section:workspace_map -->')
+    lines.push(buildWorkspaceMapSection(workspaceMap))
+    lines.push('<!-- /openskulls:section:workspace_map -->')
+    lines.push('')
+  }
+
+  // ── Architect guardrails ─────────────────────────────────────────────────────
+
+  if (guardrails) {
+    lines.push('<!-- openskulls:section:architect_guardrails -->')
+    lines.push(buildGuardrailsSection(guardrails))
+    lines.push('<!-- /openskulls:section:architect_guardrails -->')
+    lines.push('')
   }
 
   // ── Agent guidance ──────────────────────────────────────────────────────────

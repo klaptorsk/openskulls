@@ -1,6 +1,6 @@
 {
   "name": "openskulls",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
   "type": "module",
   "bin": {
