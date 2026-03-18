@@ -3,17 +3,12 @@
 #
 # Install:  curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh
 # Update:   curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh -s -- --update
+# Windows:  irm https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.ps1 | iex
 
 set -e
 
-# Ensure common package manager bin dirs are in PATH (curl | sh doesn't source .bashrc)
-export PATH="$HOME/.bun/bin:$HOME/.local/share/pnpm:$HOME/.pnpm/bin:/usr/local/bin:$PATH"
-
 PACKAGE="openskulls"
-MIN_NODE_MAJOR=20
-MODE="install"  # "install" | "update"
-
-# ── Parse flags ───────────────────────────────────────────────────────────────
+MODE="install"
 
 for arg in "$@"; do
   case "$arg" in
@@ -36,61 +31,41 @@ log_warn()  { printf "${yellow}!${reset} %s\n" "$1"; }
 log_error() { printf "${red}✗${reset} %s\n" "$1" >&2; }
 die()       { log_error "$1"; exit 1; }
 
-# ── Node.js check ─────────────────────────────────────────────────────────────
+# ── Ensure bun ────────────────────────────────────────────────────────────────
 
-check_node() {
-  if ! command -v node >/dev/null 2>&1; then
-    die "Node.js is not installed. Install Node.js ${MIN_NODE_MAJOR}+ from https://nodejs.org and try again."
-  fi
+BUN_BIN="$HOME/.bun/bin/bun"
+export PATH="$HOME/.bun/bin:$PATH"
 
-  node_version=$(node --version 2>/dev/null | sed 's/v//')
-  node_major=$(echo "$node_version" | cut -d. -f1)
-
-  if [ "$node_major" -lt "$MIN_NODE_MAJOR" ] 2>/dev/null; then
-    die "Node.js ${MIN_NODE_MAJOR}+ is required (found v${node_version}). Upgrade at https://nodejs.org"
-  fi
-
-  log_ok "Node.js v${node_version}"
-}
-
-# ── Detect package manager ────────────────────────────────────────────────────
-
-detect_package_manager() {
+ensure_bun() {
   if command -v bun >/dev/null 2>&1; then
-    echo "bun"
-  elif command -v pnpm >/dev/null 2>&1; then
-    echo "pnpm"
-  else
-    die "No package manager found. Install bun (https://bun.sh) or pnpm."
+    log_ok "bun $(bun --version)"
+    return
   fi
+
+  log_step "bun not found — installing bun..."
+  curl -fsSL https://bun.sh/install | sh || die "Failed to install bun. Visit https://bun.sh to install manually."
+  export PATH="$HOME/.bun/bin:$PATH"
+
+  if ! command -v bun >/dev/null 2>&1 && [ ! -x "$BUN_BIN" ]; then
+    die "bun installed but not in PATH. Open a new terminal and re-run this installer."
+  fi
+
+  log_ok "bun $("$BUN_BIN" --version 2>/dev/null || bun --version)"
 }
 
-# ── Install / Update ──────────────────────────────────────────────────────────
+# ── Install ───────────────────────────────────────────────────────────────────
 
-install_package() {
-  pm=$1
-  target="${PACKAGE}@latest"
-
-  case "$pm" in
-    bun)
-      log_step "${ACTION} via bun..."
-      bun add --global "$target"
-      ;;
-    pnpm)
-      log_step "${ACTION} via pnpm..."
-      pnpm add --global "$target"
-      ;;
-  esac
+do_install() {
+  log_step "${ACTION} ${PACKAGE}..."
+  bun add --global "${PACKAGE}@latest"
 }
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 
 verify_install() {
   if ! command -v openskulls >/dev/null 2>&1; then
-    log_warn "openskulls is installed but not in PATH."
-    log_warn "Add your global bin directory to PATH and retry."
-    log_warn "  bun:  ~/.bun/bin"
-    log_warn "  pnpm: \$(pnpm bin -g)"
+    log_warn "openskulls installed but not in PATH."
+    log_warn "Add ~/.bun/bin to your PATH, then run: openskulls --version"
     return 1
   fi
 
@@ -108,15 +83,8 @@ else
   printf "\n${bold}OpenSkulls${reset} — makes your repo readable to AI agents\n\n"
 fi
 
-pm=$(detect_package_manager)
-log_ok "Package manager: ${pm}"
-
-# Only require Node.js when bun isn't available (bun includes its own runtime)
-if [ "$pm" != "bun" ]; then
-  check_node
-fi
-
-install_package "$pm"
+ensure_bun
+do_install
 verify_install
 
 if [ "$MODE" = "install" ]; then

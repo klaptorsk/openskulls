@@ -8,35 +8,46 @@ One command turns any codebase into structured AI context — `CLAUDE.md`, proje
 
 ## Install
 
-**Requires Node.js 20+**
+**macOS / Linux**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh
 ```
 
-Or install directly:
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.ps1 | iex
+```
+
+No Node.js required — the installer auto-installs [bun](https://bun.sh) if it isn't already present.
+
+Or install directly if you already have bun:
 
 ```bash
-# bun
 bun add --global openskulls
-
-# pnpm
-pnpm add --global openskulls
 ```
 
 ---
 
 ## Update
 
+**macOS / Linux**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh -s -- --update
+```
+
+**Windows** (PowerShell)
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.ps1))) --update
 ```
 
 Or directly:
 
 ```bash
 bun add --global openskulls@latest
-pnpm add --global openskulls@latest
 ```
 
 ---
@@ -59,14 +70,11 @@ openskulls uninstall --keep-claude-md
 **Remove the binary from your system:**
 
 ```bash
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/uninstall.sh | sh
-```
 
-Or directly:
-
-```bash
+# Windows / direct
 bun remove --global openskulls
-pnpm remove --global openskulls
 ```
 
 ---
