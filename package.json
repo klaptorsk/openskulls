@@ -1,6 +1,6 @@
 {
   "name": "openskulls",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
   "type": "module",
   "bin": {
@@ -10,6 +10,7 @@
     "dist",
     "templates",
     "install.sh",
+    "install.ps1",
     "uninstall.sh"
   ],
   "scripts": {
@@ -47,9 +48,9 @@
     "url": "https://github.com/klaptorsk/openskulls/issues"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "bun": ">=1.0.0"
   },
-  "keywords": [
+"keywords": [
     "ai",
     "cli",
     "developer-tools",
