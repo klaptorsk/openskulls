@@ -33,10 +33,8 @@ detect_package_manager() {
     echo "bun"
   elif command -v pnpm >/dev/null 2>&1; then
     echo "pnpm"
-  elif command -v npm >/dev/null 2>&1; then
-    echo "npm"
   else
-    die "No package manager found."
+    die "No package manager found. Install bun (https://bun.sh) or pnpm."
   fi
 }
 
@@ -53,10 +51,6 @@ uninstall_package() {
     pnpm)
       log_step "Removing via pnpm..."
       pnpm remove --global "$PACKAGE"
-      ;;
-    npm)
-      log_step "Removing via npm..."
-      npm uninstall --global "$PACKAGE"
       ;;
   esac
 }

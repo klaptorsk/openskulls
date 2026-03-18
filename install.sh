@@ -57,10 +57,8 @@ detect_package_manager() {
     echo "bun"
   elif command -v pnpm >/dev/null 2>&1; then
     echo "pnpm"
-  elif command -v npm >/dev/null 2>&1; then
-    echo "npm"
   else
-    die "No package manager found. Install npm (comes with Node.js), pnpm, or bun."
+    die "No package manager found. Install bun (https://bun.sh) or pnpm."
   fi
 }
 
@@ -79,10 +77,6 @@ install_package() {
       log_step "${ACTION} via pnpm..."
       pnpm add --global "$target"
       ;;
-    npm)
-      log_step "${ACTION} via npm..."
-      npm install --global --no-fund --no-audit "$target"
-      ;;
   esac
 }
 
@@ -92,9 +86,8 @@ verify_install() {
   if ! command -v openskulls >/dev/null 2>&1; then
     log_warn "openskulls is installed but not in PATH."
     log_warn "Add your global bin directory to PATH and retry."
-    log_warn "  npm:  \$(npm bin -g)"
-    log_warn "  pnpm: \$(pnpm bin -g)"
     log_warn "  bun:  ~/.bun/bin"
+    log_warn "  pnpm: \$(pnpm bin -g)"
     return 1
   fi
 

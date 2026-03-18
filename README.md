@@ -14,12 +14,9 @@ One command turns any codebase into structured AI context — `CLAUDE.md`, proje
 curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.sh | sh
 ```
 
-The installer auto-detects bun, pnpm, or npm — whichever you already have. Or install directly:
+Or install directly:
 
 ```bash
-# npm
-npm install --global --no-fund --no-audit openskulls
-
 # bun
 bun add --global openskulls
 
@@ -38,7 +35,6 @@ curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.s
 Or directly:
 
 ```bash
-npm install --global --no-fund --no-audit openskulls@latest
 bun add --global openskulls@latest
 pnpm add --global openskulls@latest
 ```
@@ -69,7 +65,6 @@ curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/uninstall
 Or directly:
 
 ```bash
-npm uninstall --global openskulls
 bun remove --global openskulls
 pnpm remove --global openskulls
 ```
