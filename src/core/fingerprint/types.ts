@@ -21,7 +21,7 @@ export type Confidence = z.infer<typeof Confidence>
 
 export const LanguageSignal = z.object({
   name: z.string(),                                   // "TypeScript"
-  version: z.string().optional(),                     // "5.3.2" if detectable
+  version: z.string().nullish(),                       // "5.3.2" if detectable
   confidence: Confidence,
   percentage: z.number().min(0).max(100),             // % of non-test source files
   primary: z.boolean().default(false),
@@ -31,7 +31,7 @@ export type LanguageSignal = z.infer<typeof LanguageSignal>
 
 export const FrameworkSignal = z.object({
   name: z.string(),                                   // "Next.js"
-  version: z.string().optional(),
+  version: z.string().nullish(),
   confidence: Confidence,
   category: z.string(),                               // "frontend" | "backend" | "fullstack" | "testing" | "orm"
   evidence: z.array(z.string()).default([]),

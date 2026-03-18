@@ -1,6 +1,6 @@
 {
   "name": "openskulls",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Makes your repo readable to AI agents, then keeps it readable as the code evolves",
   "type": "module",
   "bin": {
@@ -20,9 +20,9 @@
     "compile": "bun scripts/gen-templates.ts && bun build --compile src/index.ts --outfile openskulls",
     "dev": "bun scripts/gen-templates.ts && tsc --watch",
     "typecheck": "bun scripts/gen-templates.ts && tsc --noEmit",
-    "test": "bun scripts/gen-templates.ts && vitest run",
-    "test:watch": "bun scripts/gen-templates.ts && vitest",
-    "test:coverage": "bun scripts/gen-templates.ts && vitest run --coverage",
+    "test": "bun scripts/gen-templates.ts && bun test",
+    "test:watch": "bun scripts/gen-templates.ts && bun test --watch",
+    "test:coverage": "bun scripts/gen-templates.ts && bun test --coverage",
     "lint": "eslint 'src/**/*.ts'"
   },
   "dependencies": {
@@ -37,9 +37,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^2.0.0",
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "typescript": "^5.5.0"
   },
   "repository": {
     "type": "git",

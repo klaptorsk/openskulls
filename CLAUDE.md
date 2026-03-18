@@ -22,7 +22,7 @@ Primary language: **TypeScript**.
 - **ora** 8.1.0 (utility)
 - **smol-toml** 1.3.1 (utility)
 - **@clack/prompts** 1.0.1 (utility)
-- **vitest** 2.0.0 (testing)
+- **bun test** (built-in test runner)
 
 <!-- /openskulls:section:tech_stack -->
 
@@ -60,9 +60,9 @@ Primary language: **TypeScript**.
 <!-- openskulls:section:testing -->
 ## Testing
 
-- **Framework**: vitest
+- **Framework**: bun test (built-in)
 - **Pattern**: `tests/**/*.test.ts`
-- **Coverage**: v8
+- **Coverage**: bun --coverage
 
 <!-- /openskulls:section:testing -->
 
