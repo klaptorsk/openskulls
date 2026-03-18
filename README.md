@@ -20,17 +20,15 @@ curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.s
 irm https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.ps1 | iex
 ```
 
-No Node.js required — the installer auto-installs [bun](https://bun.sh) if it isn't already present.
+No Node.js or package manager required — the installer downloads a self-contained binary for your platform directly from [GitHub Releases](https://github.com/klaptorsk/openskulls/releases).
 
-Or install directly if you already have bun:
-
-```bash
-bun add --global openskulls
-```
+Or download manually from the [releases page](https://github.com/klaptorsk/openskulls/releases) and put the binary anywhere in your `PATH`.
 
 ---
 
 ## Update
+
+Re-run the installer — it always pulls the latest release:
 
 **macOS / Linux**
 
@@ -42,12 +40,6 @@ curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.s
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/klaptorsk/openskulls/main/install.ps1))) --update
-```
-
-Or directly:
-
-```bash
-bun add --global openskulls@latest
 ```
 
 ---
@@ -73,8 +65,8 @@ openskulls uninstall --keep-claude-md
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/klaptorsk/openskulls/main/uninstall.sh | sh
 
-# Windows / direct
-bun remove --global openskulls
+# Windows — delete the binary directly
+Remove-Item "$env:USERPROFILE\.local\bin\openskulls.exe"
 ```
 
 ---
@@ -579,14 +571,15 @@ Because analysis is AI-powered, OpenSkulls can detect any stack. The following a
 git clone https://github.com/klaptorsk/openskulls
 cd openskulls
 bun install
-bun run build
-bun link        # makes `openskulls` available globally
+bun run compile          # produces ./openskulls binary
+./openskulls --version
 ```
 
-Verify:
+Or build a development dist and link it globally:
 
 ```bash
-openskulls --version
+bun run build
+bun link                 # makes `openskulls` available globally
 ```
 
 Run the test suite:
