@@ -113,6 +113,10 @@ Examples:
         spin.succeed('Repository analysed')
       } catch (err) {
         spin.fail('Analysis failed')
+        if (options.verbose) {
+          verboseBlock('Analysis prompt', analysisCapture.prompt)
+          verboseBlock('Analysis response', analysisCapture.response)
+        }
         fatal(
           `Could not analyse ${repoRoot}`,
           err instanceof Error ? err.message : String(err),
