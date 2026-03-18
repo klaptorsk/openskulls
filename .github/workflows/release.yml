@@ -11,24 +11,19 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.artifact }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
+          - target: bun-linux-x64
             artifact: openskulls-linux-x64
-          - os: ubuntu-latest
-            target: bun-linux-arm64
+          - target: bun-linux-arm64
             artifact: openskulls-linux-arm64
-          - os: macos-13
-            target: bun-darwin-x64
+          - target: bun-darwin-x64
             artifact: openskulls-darwin-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
+          - target: bun-darwin-arm64
             artifact: openskulls-darwin-arm64
-          - os: windows-latest
-            target: bun-windows-x64
+          - target: bun-windows-x64
             artifact: openskulls-windows-x64.exe
 
     steps:
