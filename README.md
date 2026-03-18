@@ -216,7 +216,9 @@ Built-in workflow scripts are emitted automatically when conditions are met:
 | `run-tests.md` | Testing framework detected (`/run-tests`) |
 | `commit.md` | Conventional Commits style detected (`/commit`) |
 
-Skills from installed packages (via `openskulls add`) are also placed here.
+#### Pack skills
+
+Skills from installed packs (via `openskulls add`) are emitted as `.claude/skills/<pack>-<id>/SKILL.md` alongside the AI-generated skills. They appear as slash commands in Claude Code just like any other skill.
 
 ### Maintain
 
@@ -244,12 +246,13 @@ openskulls init --verbose       # show AI prompts and raw responses
 4. **Workflow setup** — static questions + AI-generated contextual questions to configure how Claude works in this repo (skipped with `--yes`)
 5. **Generate project skills** — third AI call produces repo-specific slash commands, using your answers as context (non-fatal)
 6. **Generate architect skill** — optional AI call that generates a domain-expert architect agent (if enabled in step 4)
-7. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
-8. **Show generation plan** — lists every file that will be created or updated
-9. **Confirm** — nothing is written until you approve (skipped with `--yes`)
-10. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
-11. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
-12. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
+7. **Generate methodology skills** — AI call produces architect, workflow-lifecycle, verify, and tdd skills grounded in the actual project structure (non-fatal)
+8. **Generate files** — renders `CLAUDE.md` and all context files from the fingerprint
+9. **Show generation plan** — lists every file that will be created or updated
+10. **Confirm** — nothing is written until you approve (skipped with `--yes`)
+11. **Write files** — applies merge strategy per file (see [Merge Strategy](#merge-strategy))
+12. **Save baseline** — writes `.openskulls/fingerprint.json` and `.openskulls/config.toml`
+13. **Install git hook** — adds `.git/hooks/post-commit` for automatic drift detection
 
 **Verbose mode** (`--verbose` / `-v`): prints the full AI prompt and raw JSON response for every AI call — analysis, questionnaire, skills, and architect. Useful for debugging or understanding what was sent to the model.
 
@@ -342,28 +345,41 @@ openskulls audit --json         # machine-readable output
 
 ---
 
-## `openskulls add <package>` _(v0.2)_
+## `openskulls add <source>`
 
-Install a skill package from the OpenSkulls registry.
+Install a skill pack from GitHub or a local path. No registry required — packs are plain git repos with a `skull-pack.toml` manifest.
 
 ```bash
-openskulls add fastapi-conventions
-openskulls add nextjs-fullstack
-openskulls add terraform-workflow
+openskulls add github:user/react-patterns
+openskulls add github:user/react-patterns#v1.0.0   # pin to a tag
+openskulls add ../local/my-company-pack             # local symlink
 ```
 
-Packages are versioned and pinned in `.openskulls/skulls.lock`. Skills are installed to `.claude/commands/` as plain markdown files you can read, edit, and commit.
+The pack is cloned into `.openskulls/packs/` (gitignored), the manifest is validated, and the source URL is recorded in `.openskulls/config.toml`. Run `openskulls sync` after adding to regenerate context files with the new pack's skills.
 
 ---
 
-## `openskulls publish [path]` _(v0.2)_
+## `openskulls remove <name>`
 
-Package and publish skills and rules to the OpenSkulls registry.
+Remove an installed skill pack.
 
 ```bash
-openskulls publish              # publishes the current package (skulls.toml required)
-openskulls publish --dry-run    # validate without publishing
+openskulls remove react-patterns
 ```
+
+Removes the pack directory and its config entry. Run `openskulls sync` to regenerate context without the pack.
+
+---
+
+## `openskulls list`
+
+Show all installed skill packs.
+
+```bash
+openskulls list
+```
+
+Displays pack name, source URL, skill count, and rule count.
 
 ---
 
@@ -559,9 +575,9 @@ Because analysis is AI-powered, OpenSkulls can detect any stack. The following a
 ```bash
 git clone https://github.com/klaptorsk/openskulls
 cd openskulls
-npm install --no-fund --no-audit
-npm run build
-npm link        # makes `openskulls` available globally
+bun install
+bun run build
+bun link        # makes `openskulls` available globally
 ```
 
 Verify:
@@ -573,7 +589,7 @@ openskulls --version
 Run the test suite:
 
 ```bash
-npm test
+bun run test
 ```
 
 ---
@@ -595,8 +611,8 @@ For full module structure, data flow diagrams, config file schemas, and an exten
 | Version | Focus |
 |---------|-------|
 | **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code, Cursor, Copilot, Codex generators — workflow rules — parallel skill generation — git hook |
-| **v0.2** | `openskulls audit` — `openskulls diff` — `openskulls doctor` — skill registry + `openskulls add` — AI response cache — CI mode (`--ci` flag) |
-| **v0.3** | `openskulls sync --watch` — monorepo support — `openskulls skills push/pull` — plugin API — external package loading |
+| **v0.2** | Git-native skill packs (`add`, `remove`, `list`) — AI methodology skills (architect, workflow-lifecycle, verify, tdd) — pack skill emission |
+| **v0.3** | `openskulls audit` — `openskulls sync --watch` — monorepo support — pack auto-update on sync |
 | **v1.0** | Platform: org-level context — agent performance metrics — multi-agent profiles |
 
 ---
