@@ -619,7 +619,7 @@ bun run test
 
 - **Generators are pure functions** — `generate(input): GeneratedFile[]` never writes to disk. The CLI layer owns all I/O. This enables dry-run, diff preview, and CI mode.
 - **Zod as source of truth** — all types are `z.infer<typeof Schema>`. The same schemas validate AI responses at runtime and provide compile-time safety.
-- **Stdin over CLI args** — AI prompts are written to `child.stdin` to avoid `ARG_MAX` limits on large repos. On Windows, `.cmd` wrappers (e.g. `copilot.cmd`) don't forward stdin to the underlying binary; openskulls automatically upgrades to PowerShell and passes the prompt via `$env:__OPENSKULLS_PROMPT` instead.
+- **Stdin over CLI args** — AI prompts are written to `child.stdin` to avoid `ARG_MAX` limits on large repos. On Windows, `.cmd` wrappers (e.g. `copilot.cmd`) don't forward stdin to the underlying binary; openskulls automatically upgrades to PowerShell, stores the prompt in `$env:__OPENSKULLS_PROMPT`, and pipes it to the binary's stdin via `-EncodedCommand` (avoids PowerShell special-char parsing and command-line length limits).
 - **Content-addressed fingerprints** — SHA-256 over content fields only (no paths, no timestamps). Same codebase = same hash on any machine, in any directory.
 - **Non-blocking hooks** — the post-commit hook always exits 0. A sync failure or analysis error never interrupts a developer's commit.
 
