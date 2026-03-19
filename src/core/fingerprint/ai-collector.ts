@@ -341,8 +341,12 @@ export async function invokeAICLI(
 
     let child: ReturnType<typeof spawn>
     if (effectiveShell === 'powershell') {
-      const psCmd = `${adapter.command} -p $env:__OPENSKULLS_PROMPT`
-      child = spawn('powershell.exe', ['-NoProfile', '-Command', psCmd], {
+      // Use -EncodedCommand so the prompt (which contains JSON with {}, "", $,
+      // newlines, etc.) is never expanded inline inside a -Command string.
+      // Pipe via stdin to also dodge Windows command-line length limits.
+      const psScript = `$p = $env:__OPENSKULLS_PROMPT; $p | & '${adapter.command}' -p -`
+      const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
+      child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], {
         env: { ...process.env, __OPENSKULLS_PROMPT: prompt },
       })
     } else {
