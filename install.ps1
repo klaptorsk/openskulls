@@ -113,11 +113,11 @@ function Verify-Install {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "OpenSkulls" -ForegroundColor White -NoNewline
+Write-Host "OpenSkulls" -ForegroundColor Red -NoNewline
 if ($Update) {
-  Write-Host " — updating to latest"
+  Write-Host " — " -NoNewline; Write-Host "updating to latest" -ForegroundColor Red
 } else {
-  Write-Host " — makes your repo readable to AI agents"
+  Write-Host " — " -NoNewline; Write-Host "skull-wires your repo for agentic engineering" -ForegroundColor Red
 }
 Write-Host ""
 

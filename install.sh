@@ -144,9 +144,9 @@ verify_install() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if [ "$MODE" = "update" ]; then
-  printf "\n${bold}OpenSkulls${reset} — updating to latest\n\n"
+  printf "\n${red}${bold}OpenSkulls${reset} — ${red}updating to latest${reset}\n\n"
 else
-  printf "\n${bold}OpenSkulls${reset} — makes your repo readable to AI agents\n\n"
+  printf "\n${red}${bold}OpenSkulls${reset} — ${red}skull-wires your repo for agentic engineering${reset}\n\n"
 fi
 
 platform=$(detect_platform)
