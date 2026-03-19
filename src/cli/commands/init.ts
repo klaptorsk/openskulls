@@ -30,7 +30,7 @@ import { dirname, join, resolve } from 'node:path'
 import { stringify as tomlStringify } from 'smol-toml'
 import chalk from 'chalk'
 import type { Command } from 'commander'
-import { AIFingerprintCollector, detectAICLIFor, type AICLIAdapter, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
+import { AIFingerprintCollector, detectAICLI, type AICLIAdapter, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { saveFingerprint } from '../../core/fingerprint/cache.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
 import { generateMethodologySkills } from '../../core/fingerprint/methodology-builder.js'
@@ -85,27 +85,44 @@ Examples:
       printBanner()
       intro(`init  ${chalk.dim(repoRoot)}`)
 
-      // ── Step 0: Select AI engine ──────────────────────────────────────────
+      // ── Step 0: Select output target + detect analysis engine ─────────────
+      //
+      // The user's tool selection determines which OUTPUT files are generated
+      // (CLAUDE.md, copilot-instructions.md, AGENTS.md, etc.).
+      //
+      // The ANALYSIS ENGINE is detected separately — we always prefer the best
+      // available CLI (claude > codex > copilot) regardless of the output target.
+      // This means a Copilot user with Claude Code installed gets Claude's
+      // analysis quality while still generating copilot-instructions.md.
+
+      const TOOL_LABELS: Record<string, string> = {
+        claude_code: 'Claude Code',
+        codex:       'OpenAI Codex',
+        copilot:     'GitHub Copilot',
+        cursor:      'Cursor',
+      }
 
       const CLI_NAMES: Record<string, string> = {
-        claude:  'Claude Code',
-        codex:   'Codex',
-        copilot: 'GitHub Copilot',
-        cursor:  'Cursor',
+        claude:      'Claude Code',   'claude.cmd':  'Claude Code',
+        codex:       'Codex',         'codex.cmd':   'Codex',
+        copilot:     'GitHub Copilot', 'copilot.cmd': 'GitHub Copilot',
       }
 
       const selectedToolIds = options.yes ? ['claude_code'] : [await askAITool()]
 
-      const adapter: AICLIAdapter = await detectAICLIFor(selectedToolIds).catch((err: unknown) =>
+      // Detect the best available CLI for analysis (claude > codex > copilot)
+      const adapter: AICLIAdapter = await detectAICLI().catch((err: unknown) =>
         fatal(
           'No AI CLI found in PATH.',
-          err instanceof Error ? err.message : 'Install Claude Code, Copilot, Cursor, or OpenAI Codex.',
+          err instanceof Error ? err.message : 'Install Claude Code, GitHub Copilot, or OpenAI Codex.',
         )
       )
 
-      const displayName = CLI_NAMES[adapter.command] ?? adapter.command
+      const engineName = CLI_NAMES[adapter.command] ?? adapter.command
       const versionHint = adapter.version ? ` ${adapter.version}` : ''
-      log.success(`AI engine: ${displayName}${chalk.dim(`${versionHint} (${adapter.command})`)}`)
+      const selectedTool = selectedToolIds[0] ?? 'claude_code'
+      log.success(`Output: ${TOOL_LABELS[selectedTool] ?? selectedTool}`)
+      log.success(`Analysis engine: ${engineName}${chalk.dim(`${versionHint} (${adapter.command})`)}`)
 
       log.blank()
 

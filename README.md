@@ -271,7 +271,7 @@ All prompts use interactive arrow-key selectors — use `↑`/`↓` to navigate,
 
 | Question | Options | Default |
 |---|---|---|
-| AI tool to use for analysis | Claude Code, GitHub Copilot, OpenAI Codex, Cursor | Claude Code |
+| AI tool (output format) | Claude Code, GitHub Copilot, OpenAI Codex, Cursor | Claude Code |
 | Auto-documentation | Ask me first / Update automatically / Handle myself | Ask me first |
 | Auto-commit | Ask me first / Commit automatically / Never | Ask me first |
 | Architect agent | Yes / No | Yes |
@@ -619,7 +619,7 @@ bun run test
 
 - **Generators are pure functions** — `generate(input): GeneratedFile[]` never writes to disk. The CLI layer owns all I/O. This enables dry-run, diff preview, and CI mode.
 - **Zod as source of truth** — all types are `z.infer<typeof Schema>`. The same schemas validate AI responses at runtime and provide compile-time safety.
-- **Stdin over CLI args** — AI prompts are written to `child.stdin` to avoid `ARG_MAX` limits on large repos. On Windows, `.cmd` wrappers (e.g. `copilot.cmd`) don't forward stdin to the underlying binary; openskulls writes the prompt to a temp file and delivers it via a shell-level pipeline (`type file | command` for cmd.exe, `Get-Content | command` for PowerShell-only CLIs), so the shell sets up stdin before the wrapper starts.
+- **Analysis engine ≠ output target** — the user's tool selection (Claude Code, Copilot, Cursor, Codex) determines which output files are generated. The analysis engine is detected separately, always preferring the best available CLI (`claude` > `codex` > `copilot`). A Copilot user with Claude Code installed gets Claude's analysis quality while still generating `copilot-instructions.md`. On Windows, prompts are delivered via PowerShell `Start-Process -RedirectStandardInput` (native file handle) to bypass `.cmd` wrapper stdin issues.
 - **Content-addressed fingerprints** — SHA-256 over content fields only (no paths, no timestamps). Same codebase = same hash on any machine, in any directory.
 - **Non-blocking hooks** — the post-commit hook always exits 0. A sync failure or analysis error never interrupts a developer's commit.
 
