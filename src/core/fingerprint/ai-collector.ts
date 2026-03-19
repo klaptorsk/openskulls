@@ -353,8 +353,12 @@ export async function invokeAICLI(
         const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
         child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded])
       } else {
-        // cmd.exe pipeline: `type` reads file, pipe delivers it as stdin
-        child = spawn('cmd.exe', ['/c', `type "${tmpFile}" | "${adapter.command}" -p -`])
+        // cmd.exe pipeline: `type` reads file, pipe delivers it as stdin.
+        // windowsVerbatimArguments stops Node from escaping the inner quotes
+        // (Node uses \" which cmd.exe doesn't understand).
+        child = spawn('cmd.exe', ['/c', `type "${tmpFile}" | ${adapter.command} -p -`], {
+          windowsVerbatimArguments: true,
+        })
       }
     } else {
       const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
