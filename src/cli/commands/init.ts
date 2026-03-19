@@ -22,8 +22,7 @@
  * 12.  Install git hook
  */
 
-import { intro, outro, confirm, isCancel, cancel } from '@clack/prompts'
-import { circleMultiselect } from '../ui/prompts.js'
+import { intro, outro, confirm, select, isCancel, cancel } from '@clack/prompts'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -95,7 +94,7 @@ Examples:
         cursor:  'Cursor',
       }
 
-      const selectedToolIds = options.yes ? ['claude_code'] : await askAITools()
+      const selectedToolIds = options.yes ? ['claude_code'] : [await askAITool()]
 
       const adapter: AICLIAdapter = await detectAICLIFor(selectedToolIds).catch((err: unknown) =>
         fatal(
@@ -130,9 +129,12 @@ Examples:
           verboseBlock('Analysis prompt', analysisCapture.prompt)
           verboseBlock('Analysis response', analysisCapture.response)
         }
+        const rawSnippet = analysisCapture.response
+          ? `\nAI response (first 200 chars): ${analysisCapture.response.slice(0, 200)}`
+          : ''
         fatal(
           `Could not analyse ${repoRoot}`,
-          err instanceof Error ? err.message : String(err),
+          (err instanceof Error ? err.message : String(err)) + rawSnippet,
         )
       }
       if (options.verbose) {
@@ -574,14 +576,14 @@ const TOOL_MENU = [
   { value: 'cursor',      label: 'Cursor',          hint: '.cursor/rules/project.mdc' },
 ]
 
-async function askAITools(): Promise<string[]> {
-  const result = await circleMultiselect({
-    message: 'Which AI tool(s) do you use?',
+async function askAITool(): Promise<string> {
+  const result = await select({
+    message: 'Which AI tool do you use?',
     options: TOOL_MENU,
-    initialValues: ['claude_code'],
+    initialValue: 'claude_code',
   })
   if (isCancel(result)) { cancel('Cancelled.'); process.exit(0) }
-  return result as string[]
+  return result as string
 }
 
 // ─── Config writer ────────────────────────────────────────────────────────────

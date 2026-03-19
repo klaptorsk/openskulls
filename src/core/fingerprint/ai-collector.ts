@@ -330,15 +330,24 @@ export async function invokeAICLI(
     //
     // stdin mode: `claude -p -` — prompt is written to child.stdin after spawn.
     // arg mode:   `codex -p "…"` — prompt is the -p argument (default shell escape).
+    //
+    // Windows stdin fix: .cmd wrappers (shell: true / cmd.exe) do not forward
+    // stdin to the underlying binary. Upgrade to powershell so the prompt is
+    // delivered via env var instead, completely bypassing stdin.
+    let effectiveShell = adapter.shell
+    if (effectiveShell === true && process.platform === 'win32' && adapter.invoke === 'stdin') {
+      effectiveShell = 'powershell'
+    }
+
     let child: ReturnType<typeof spawn>
-    if (adapter.shell === 'powershell') {
+    if (effectiveShell === 'powershell') {
       const psCmd = `${adapter.command} -p $env:__OPENSKULLS_PROMPT`
       child = spawn('powershell.exe', ['-NoProfile', '-Command', psCmd], {
         env: { ...process.env, __OPENSKULLS_PROMPT: prompt },
       })
     } else {
       const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
-      child = spawn(adapter.command, args, { shell: adapter.shell === true })
+      child = spawn(adapter.command, args, { shell: effectiveShell === true })
     }
 
     let out = ''
@@ -367,7 +376,7 @@ export async function invokeAICLI(
       }
     })
 
-    if (adapter.invoke === 'stdin' && adapter.shell !== 'powershell') {
+    if (adapter.invoke === 'stdin' && effectiveShell !== 'powershell') {
       child.stdin?.on('error', () => { /* ignore broken pipe */ })
       child.stdin?.write(prompt)
       child.stdin?.end()

@@ -271,7 +271,7 @@ All prompts use interactive arrow-key selectors — use `↑`/`↓` to navigate,
 
 | Question | Options | Default |
 |---|---|---|
-| AI tool(s) to configure | Claude Code, GitHub Copilot, OpenAI Codex, Cursor (multi-select) | Claude Code |
+| AI tool to use for analysis | Claude Code, GitHub Copilot, OpenAI Codex, Cursor | Claude Code |
 | Auto-documentation | Ask me first / Update automatically / Handle myself | Ask me first |
 | Auto-commit | Ask me first / Commit automatically / Never | Ask me first |
 | Architect agent | Yes / No | Yes |
@@ -619,7 +619,7 @@ bun run test
 
 - **Generators are pure functions** — `generate(input): GeneratedFile[]` never writes to disk. The CLI layer owns all I/O. This enables dry-run, diff preview, and CI mode.
 - **Zod as source of truth** — all types are `z.infer<typeof Schema>`. The same schemas validate AI responses at runtime and provide compile-time safety.
-- **Stdin over CLI args** — AI prompts are written to `child.stdin` to avoid `ARG_MAX` limits on large repos.
+- **Stdin over CLI args** — AI prompts are written to `child.stdin` to avoid `ARG_MAX` limits on large repos. On Windows, `.cmd` wrappers (e.g. `copilot.cmd`) don't forward stdin to the underlying binary; openskulls automatically upgrades to PowerShell and passes the prompt via `$env:__OPENSKULLS_PROMPT` instead.
 - **Content-addressed fingerprints** — SHA-256 over content fields only (no paths, no timestamps). Same codebase = same hash on any machine, in any directory.
 - **Non-blocking hooks** — the post-commit hook always exits 0. A sync failure or analysis error never interrupts a developer's commit.
 
