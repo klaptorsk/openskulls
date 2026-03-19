@@ -326,6 +326,10 @@ Examples:
 
       // ── Steps 5+6: Generate skills (and optionally architect) ────────────
       //   Sequential by default; parallel when useSubagents + architectEnabled.
+      //   Skills are only useful for targets that emit them (claude_code, codex).
+
+      const SKILL_TARGETS = new Set(['claude_code', 'codex'])
+      const needsSkills = selectedToolIds.some((id) => SKILL_TARGETS.has(id))
 
       let aiSkills: AISkill[] = []
       const skillsCapture = { prompt: '', response: '' }
@@ -339,7 +343,9 @@ Examples:
         onResponse: (r) => { archCapture.response = r },
       }
 
-      if (workflowConfig.useSubagents && workflowConfig.architectEnabled) {
+      if (!needsSkills) {
+        log.info('Skipping skills generation — selected targets do not use skills')
+      } else if (workflowConfig.useSubagents && workflowConfig.architectEnabled) {
         // ── Parallel path ────────────────────────────────────────────────────
         const spin = spinner('Generating skills and architect skill in parallel…').start()
         const [skillsResult, archResult] = await Promise.allSettled([
@@ -398,21 +404,23 @@ Examples:
       // ── Step 5b: Generate methodology skills ─────────────────────────────
 
       const methCapture = { prompt: '', response: '' }
-      const methLogger: VerboseLogger = {
-        onPrompt:   (p) => { methCapture.prompt = p },
-        onResponse: (r) => { methCapture.response = r },
-      }
-      const methSpin = spinner('Generating methodology skills…').start()
-      try {
-        const taskSkillIds = aiSkills.map((s) => s.id)
-        const methodologySkills = await generateMethodologySkills(
-          fingerprint, methLogger, qaArg, [], taskSkillIds,
-        )
-        aiSkills = [...aiSkills, ...methodologySkills]
-        methSpin.succeed(`Generated ${methodologySkills.length} methodology skills`)
-      } catch (err) {
-        methSpin.warn('Could not generate methodology skills — skipping')
-        log.info(err instanceof Error ? err.message : String(err))
+      if (needsSkills) {
+        const methLogger: VerboseLogger = {
+          onPrompt:   (p) => { methCapture.prompt = p },
+          onResponse: (r) => { methCapture.response = r },
+        }
+        const methSpin = spinner('Generating methodology skills…').start()
+        try {
+          const taskSkillIds = aiSkills.map((s) => s.id)
+          const methodologySkills = await generateMethodologySkills(
+            fingerprint, methLogger, qaArg, [], taskSkillIds,
+          )
+          aiSkills = [...aiSkills, ...methodologySkills]
+          methSpin.succeed(`Generated ${methodologySkills.length} methodology skills`)
+        } catch (err) {
+          methSpin.warn('Could not generate methodology skills — skipping')
+          log.info(err instanceof Error ? err.message : String(err))
+        }
       }
       if (options.verbose) {
         verboseBlock('Methodology prompt', methCapture.prompt)

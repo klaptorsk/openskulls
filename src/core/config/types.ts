@@ -147,6 +147,28 @@ export function defaultProjectConfig(): ProjectConfig {
   return ProjectConfig.parse({})
 }
 
+/**
+ * Read [repo]/.openskulls/config.toml and return the set of enabled target names.
+ * Falls back to ['claude_code'] if the file is missing or has no targets.
+ */
+export async function loadEnabledTargets(repoRoot: string): Promise<Set<string>> {
+  const configPath = join(repoRoot, '.openskulls', 'config.toml')
+  try {
+    const raw = await readFile(configPath, 'utf-8')
+    const parsed = tomlParse(raw) as Record<string, unknown>
+    const targets = parsed['targets'] as Array<{ name?: string; enabled?: boolean }> | undefined
+    if (targets && targets.length > 0) {
+      const enabled = targets
+        .filter((t) => t.enabled !== false && typeof t.name === 'string')
+        .map((t) => t.name as string)
+      if (enabled.length > 0) return new Set(enabled)
+    }
+  } catch {
+    // missing or malformed config
+  }
+  return new Set(['claude_code'])
+}
+
 export function defaultGlobalConfig(): GlobalConfig {
   return GlobalConfig.parse({})
 }

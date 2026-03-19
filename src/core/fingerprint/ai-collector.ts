@@ -11,7 +11,7 @@
  * they consume RepoFingerprint which is unchanged.
  */
 
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -380,8 +380,18 @@ export async function invokeAICLI(
     }
 
     const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], {
-      timeout: timeoutMs,
+
+    // Use async spawn so the event loop keeps running (spinner animation)
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      const child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded])
+
+      const timer = setTimeout(() => {
+        child.kill()
+        reject(new Error(`AI CLI timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+
+      child.on('error', (e: Error) => { clearTimeout(timer); reject(e) })
+      child.on('close', (code: number | null) => { clearTimeout(timer); resolve(code) })
     })
 
     let out = '', err = ''
@@ -389,9 +399,8 @@ export async function invokeAICLI(
     try { err = readFileSync(errFile, 'utf-8') } catch {}
     for (const f of tmpFiles) { try { unlinkSync(f) } catch {} }
 
-    if (r.error) throw r.error
-    if (r.status !== 0) {
-      throw new Error(`${adapter.command} exited ${String(r.status)}: ${err}`)
+    if (exitCode !== 0) {
+      throw new Error(`${adapter.command} exited ${String(exitCode)}: ${err}`)
     }
 
     // Out-File adds a UTF-8 BOM — strip it if present

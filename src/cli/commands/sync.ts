@@ -35,7 +35,7 @@ import { generateArchitectSkill } from '../../core/fingerprint/architect-builder
 import { generateArchitectGuardrails, isComplexProject, type ArchitectGuardrails } from '../../core/fingerprint/guardrails-builder.js'
 import { resolveFilePath, type GeneratedFile, type WorkspaceMapEntry } from '../../core/generators/base.js'
 import { selectGenerators } from '../../core/generators/registry.js'
-import { defaultProjectConfig, defaultGlobalConfig, loadWorkflowConfig, loadWorkspaceConfig } from '../../core/config/types.js'
+import { defaultProjectConfig, defaultGlobalConfig, loadWorkflowConfig, loadWorkspaceConfig, loadEnabledTargets } from '../../core/config/types.js'
 import {
   divider, fatal, fileList, heading, log, spinner, verboseBlock,
 } from '../ui/console.js'
@@ -92,6 +92,9 @@ export function registerSync(program: Command): void {
     })
 }
 
+/** Targets that emit .claude/skills/ files — used to skip unnecessary AI calls. */
+const SKILL_TARGETS = new Set(['claude_code', 'codex'])
+
 // ─── Interactive mode ─────────────────────────────────────────────────────────
 
 async function interactiveMode(
@@ -108,6 +111,8 @@ async function interactiveMode(
   }
 
   const workflowConfig = await loadWorkflowConfig(repoRoot)
+  const enabledTargets = await loadEnabledTargets(repoRoot)
+  const needsSkills = [...enabledTargets].some((id) => SKILL_TARGETS.has(id))
 
   // Load workspace config and per-workspace baselines
   const wsConfig = await loadWorkspaceConfig(repoRoot)
@@ -179,69 +184,74 @@ async function interactiveMode(
 
   // ── Step 3b: Generate AI skills ──────────────────────────────────────────
 
-  const skillsSpin = spinner('Generating project skills…').start()
   let aiSkills: AISkill[] = []
   const skillsCapture = { prompt: '', response: '' }
-  try {
-    const skillsLogger: VerboseLogger = {
-      onPrompt:   (p) => { skillsCapture.prompt = p },
-      onResponse: (r) => { skillsCapture.response = r },
-    }
-    aiSkills = await generateAISkills(fingerprint, skillsLogger)
-    skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
-  } catch (err) {
-    skillsSpin.warn('Could not generate skills — skipping')
-    log.info(err instanceof Error ? err.message : String(err))
-    // Non-fatal: sync continues without skills
-  }
-  if (options.verbose) {
-    verboseBlock('Skills prompt', skillsCapture.prompt)
-    verboseBlock('Skills response', skillsCapture.response)
-  }
 
-  // ── Step 3c: Architect skill (if enabled) ────────────────────────────────
-
-  if (workflowConfig.architectEnabled) {
-    const archSpin = spinner('Regenerating architect skill…').start()
-    const archCapture = { prompt: '', response: '' }
+  if (!needsSkills) {
+    log.info('Skipping skills generation — enabled targets do not use skills')
+  } else {
+    const skillsSpin = spinner('Generating project skills…').start()
     try {
-      const archLogger: VerboseLogger = {
-        onPrompt:   (p) => { archCapture.prompt = p },
-        onResponse: (r) => { archCapture.response = r },
+      const skillsLogger: VerboseLogger = {
+        onPrompt:   (p) => { skillsCapture.prompt = p },
+        onResponse: (r) => { skillsCapture.response = r },
       }
-      const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger)
-      aiSkills = [architectSkill, ...aiSkills]
-      archSpin.succeed('Regenerated architect skill')
+      aiSkills = await generateAISkills(fingerprint, skillsLogger)
+      skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
     } catch (err) {
-      archSpin.warn('Could not regenerate architect skill — skipping')
+      skillsSpin.warn('Could not generate skills — skipping')
+      log.info(err instanceof Error ? err.message : String(err))
+      // Non-fatal: sync continues without skills
+    }
+    if (options.verbose) {
+      verboseBlock('Skills prompt', skillsCapture.prompt)
+      verboseBlock('Skills response', skillsCapture.response)
+    }
+
+    // ── Step 3c: Architect skill (if enabled) ──────────────────────────────
+
+    if (workflowConfig.architectEnabled) {
+      const archSpin = spinner('Regenerating architect skill…').start()
+      const archCapture = { prompt: '', response: '' }
+      try {
+        const archLogger: VerboseLogger = {
+          onPrompt:   (p) => { archCapture.prompt = p },
+          onResponse: (r) => { archCapture.response = r },
+        }
+        const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger)
+        aiSkills = [architectSkill, ...aiSkills]
+        archSpin.succeed('Regenerated architect skill')
+      } catch (err) {
+        archSpin.warn('Could not regenerate architect skill — skipping')
+        log.info(err instanceof Error ? err.message : String(err))
+      }
+      if (options.verbose) {
+        verboseBlock('Architect prompt', archCapture.prompt)
+        verboseBlock('Architect response', archCapture.response)
+      }
+    }
+
+    // ── Step 3d: Methodology skills ────────────────────────────────────────
+
+    const methSpin = spinner('Generating methodology skills…').start()
+    const methCapture = { prompt: '', response: '' }
+    try {
+      const methLogger: VerboseLogger = {
+        onPrompt:   (p) => { methCapture.prompt = p },
+        onResponse: (r) => { methCapture.response = r },
+      }
+      const taskIds = aiSkills.map((s) => s.id)
+      const methSkills = await generateMethodologySkills(fingerprint, methLogger, undefined, [], taskIds)
+      aiSkills = [...aiSkills, ...methSkills]
+      methSpin.succeed(`Generated ${methSkills.length} methodology skills`)
+    } catch (err) {
+      methSpin.warn('Could not generate methodology skills — skipping')
       log.info(err instanceof Error ? err.message : String(err))
     }
     if (options.verbose) {
-      verboseBlock('Architect prompt', archCapture.prompt)
-      verboseBlock('Architect response', archCapture.response)
+      verboseBlock('Methodology prompt', methCapture.prompt)
+      verboseBlock('Methodology response', methCapture.response)
     }
-  }
-
-  // ── Step 3d: Methodology skills ──────────────────────────────────────────
-
-  const methSpin = spinner('Generating methodology skills…').start()
-  const methCapture = { prompt: '', response: '' }
-  try {
-    const methLogger: VerboseLogger = {
-      onPrompt:   (p) => { methCapture.prompt = p },
-      onResponse: (r) => { methCapture.response = r },
-    }
-    const taskIds = aiSkills.map((s) => s.id)
-    const methSkills = await generateMethodologySkills(fingerprint, methLogger, undefined, [], taskIds)
-    aiSkills = [...aiSkills, ...methSkills]
-    methSpin.succeed(`Generated ${methSkills.length} methodology skills`)
-  } catch (err) {
-    methSpin.warn('Could not generate methodology skills — skipping')
-    log.info(err instanceof Error ? err.message : String(err))
-  }
-  if (options.verbose) {
-    verboseBlock('Methodology prompt', methCapture.prompt)
-    verboseBlock('Methodology response', methCapture.response)
   }
 
   // ── Step 3e: Architect guardrails (complex projects only) ────────────────
@@ -326,7 +336,7 @@ async function interactiveMode(
     foreignSkills: foreignScan.foreignSkills.length > 0 ? foreignScan.foreignSkills : undefined,
   }
 
-  const activeTools = new Set(['claude_code', ...fingerprint.aiCLIs.map((a) => a.tool)])
+  const activeTools = new Set([...enabledTargets, ...fingerprint.aiCLIs.map((a) => a.tool)])
   const generatedFiles: GeneratedFile[] = selectGenerators(activeTools)
     .flatMap((g) => g.generate(generatorInput))
 
@@ -421,6 +431,8 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     }
 
     const workflowConfig = await loadWorkflowConfig(repoRoot)
+    const hookTargets = await loadEnabledTargets(repoRoot)
+    const hookNeedsSkills = [...hookTargets].some((id) => SKILL_TARGETS.has(id))
 
     // Load workspace config
     const wsConfig = await loadWorkspaceConfig(repoRoot)
@@ -435,31 +447,33 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       process.exit(0)
     }
 
-    // Generate AI skills (non-fatal)
+    // Generate AI skills (non-fatal, only if targets need them)
     let aiSkills: AISkill[] = []
-    try {
-      aiSkills = await generateAISkills(fingerprint)
-    } catch {
-      // Skip silently in hook mode
-    }
-
-    // Architect skill (non-fatal)
-    if (workflowConfig.architectEnabled) {
+    if (hookNeedsSkills) {
       try {
-        const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig)
-        aiSkills = [architectSkill, ...aiSkills]
+        aiSkills = await generateAISkills(fingerprint)
       } catch {
         // Skip silently in hook mode
       }
-    }
 
-    // Methodology skills (non-fatal)
-    try {
-      const taskIds = aiSkills.map((s) => s.id)
-      const methSkills = await generateMethodologySkills(fingerprint, undefined, undefined, [], taskIds)
-      aiSkills = [...aiSkills, ...methSkills]
-    } catch {
-      // Skip silently in hook mode
+      // Architect skill (non-fatal)
+      if (workflowConfig.architectEnabled) {
+        try {
+          const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig)
+          aiSkills = [architectSkill, ...aiSkills]
+        } catch {
+          // Skip silently in hook mode
+        }
+      }
+
+      // Methodology skills (non-fatal)
+      try {
+        const taskIds = aiSkills.map((s) => s.id)
+        const methSkills = await generateMethodologySkills(fingerprint, undefined, undefined, [], taskIds)
+        aiSkills = [...aiSkills, ...methSkills]
+      } catch {
+        // Skip silently in hook mode
+      }
     }
 
     // Workspace fingerprinting (non-fatal)
@@ -516,7 +530,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       workspaceMap: workspaceMap ?? undefined,
       foreignSkills,
     }
-    const activeTools = new Set(['claude_code', ...fingerprint.aiCLIs.map((a) => a.tool)])
+    const activeTools = new Set([...hookTargets, ...fingerprint.aiCLIs.map((a) => a.tool)])
     const generatedFiles: GeneratedFile[] = selectGenerators(activeTools)
       .flatMap((g) => g.generate(generatorInput))
 
