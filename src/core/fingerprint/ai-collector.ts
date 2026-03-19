@@ -231,7 +231,10 @@ function spawnVersion(
     child.stdout.on('data', (d: Buffer) => { out += d.toString() })
     child.stderr.on('data', (d: Buffer) => { out += d.toString() })
     child.on('error', reject)
-    child.on('close', () => { resolve(out.trim().split('\n')[0]?.trim() ?? '') })
+    child.on('close', (code: number | null) => {
+      if (code !== 0) reject(new Error(`${cmd} exited ${String(code)}: ${out.trim()}`))
+      else resolve(out.trim().split('\n')[0]?.trim() ?? '')
+    })
   })
 }
 

@@ -265,6 +265,8 @@ openskulls init --verbose       # show AI prompts and raw responses
 
 **Verbose mode** (`--verbose` / `-v`): prints the full AI prompt and raw JSON response for every AI call — analysis, questionnaire, skills, and architect. Useful for debugging or understanding what was sent to the model.
 
+**Diagnostic log**: if analysis fails, a `.openskulls/last-error.log` is written with the full prompt, raw AI response, and error details — no `--verbose` flag needed for post-mortem debugging.
+
 **Workflow questions** (step 4):
 
 All prompts use interactive arrow-key selectors — use `↑`/`↓` to navigate, `Space` to toggle (multi-select), `Enter` to confirm. Cancel any prompt with `Ctrl+C`.

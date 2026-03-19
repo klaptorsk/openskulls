@@ -142,6 +142,7 @@ Primary language: **TypeScript**.
 | P-3 | Pack emission — `ClaudeCodeGenerator` emits pack skills as `.claude/skills/<pack>-<id>/SKILL.md` | ✅ |
 | P-4 | `openskulls add` — git-native packs (github: + local symlink) | ✅ |
 | P-5 | `openskulls remove` + `openskulls list` commands | ✅ |
+| R-4 | Multi-role review agents — preset roles (architect, security, performance, etc.) + user-defined custom roles; each role generates its own `/role-review` SKILL.md via AI call; role selection during `init` with stack-aware preset suggestions; roles stored in `.openskulls/config.toml` and regenerated on sync | ⬜ |
 
 <!-- openskulls:section:workflow_rules -->
 ## Workflow Rules

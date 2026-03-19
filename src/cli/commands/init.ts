@@ -146,12 +146,37 @@ Examples:
           verboseBlock('Analysis prompt', analysisCapture.prompt)
           verboseBlock('Analysis response', analysisCapture.response)
         }
+
+        // Write last-error.log for post-mortem debugging
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        const logContent = [
+          `openskulls init — analysis error`,
+          `Date: ${new Date().toISOString()}`,
+          `Engine: ${adapter.command} (${adapter.invoke} mode)`,
+          `Error: ${errorMsg}`,
+          '',
+          '── Prompt ──',
+          analysisCapture.prompt || '(not captured)',
+          '',
+          '── Raw response ──',
+          analysisCapture.response || '(empty)',
+        ].join('\n')
+        const logDir = join(repoRoot, '.openskulls')
+        const logPath = join(logDir, 'last-error.log')
+        try {
+          await mkdir(logDir, { recursive: true })
+          await writeFile(logPath, logContent, 'utf-8')
+          log.warn(`Diagnostic log written to .openskulls/last-error.log`)
+        } catch {
+          // best-effort — don't obscure the real error
+        }
+
         const rawSnippet = analysisCapture.response
           ? `\nAI response (first 200 chars): ${analysisCapture.response.slice(0, 200)}`
           : ''
         fatal(
           `Could not analyse ${repoRoot}`,
-          (err instanceof Error ? err.message : String(err)) + rawSnippet,
+          errorMsg + rawSnippet,
         )
       }
       if (options.verbose) {

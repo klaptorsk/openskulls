@@ -21,6 +21,7 @@
 
 import { confirm, isCancel, cancel } from '@clack/prompts'
 import { existsSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { Command } from 'commander'
@@ -131,9 +132,32 @@ async function interactiveMode(
     spin.succeed('Repository analysed')
   } catch (err) {
     spin.fail('Analysis failed')
+
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    const logContent = [
+      `openskulls sync — analysis error`,
+      `Date: ${new Date().toISOString()}`,
+      `Error: ${errorMsg}`,
+      '',
+      '── Prompt ──',
+      analysisCapture.prompt || '(not captured)',
+      '',
+      '── Raw response ──',
+      analysisCapture.response || '(empty)',
+    ].join('\n')
+    const logDir = join(repoRoot, '.openskulls')
+    const logPath = join(logDir, 'last-error.log')
+    try {
+      await mkdir(logDir, { recursive: true })
+      await writeFile(logPath, logContent, 'utf-8')
+      log.warn(`Diagnostic log written to .openskulls/last-error.log`)
+    } catch {
+      // best-effort
+    }
+
     fatal(
       `Could not analyse ${repoRoot}`,
-      err instanceof Error ? err.message : String(err),
+      errorMsg,
     )
   }
   if (options.verbose) {
