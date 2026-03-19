@@ -18,15 +18,34 @@ Reference for authoring and modifying the Handlebars templates that generators u
 - Use `{{#if field}}...{{/if}}` guards for optional fingerprint fields so templates render safely when fields are absent
 - Prompt templates (under `templates/prompts/`) must include a concrete JSON example matching the current Zod schema so the AI knows the exact output shape
 
+## Section Tags in Use
+
+| Section tag | Used in | Purpose |
+|---|---|---|
+| `overview` | CLAUDE.md, copilot-instructions, AGENTS.md, project.mdc | Project description + primary stack |
+| `tech_stack` | CLAUDE.md, copilot-instructions, AGENTS.md, project.mdc | Languages + frameworks |
+| `architecture` | CLAUDE.md, copilot-instructions, AGENTS.md, project.mdc | Style, entry points, module structure |
+| `workspace_map` | CLAUDE.md, copilot-instructions, AGENTS.md | Monorepo workspace table |
+| `conventions` | CLAUDE.md, copilot-instructions, AGENTS.md, project.mdc | Linting, formatting, naming |
+| `testing` | CLAUDE.md, copilot-instructions, AGENTS.md | Test framework + patterns |
+| `cicd` | CLAUDE.md | CI/CD platform + deploy targets |
+| `workflow_rules` | CLAUDE.md, copilot-instructions, AGENTS.md | Auto-docs, auto-commit policies |
+| `architect_guardrails` | CLAUDE.md, copilot-instructions, AGENTS.md | Module ownership, layer rules, forbidden patterns |
+| `agent_guidance` | CLAUDE.md, copilot-instructions, AGENTS.md, project.mdc | Commit format, scope constraints |
+| `skills` | AGENTS.md | Codex agent skills listing |
+
 ## Key Files
 
 ```
-templates/claude-code/CLAUDE.md.hbs     — primary CLAUDE.md template (section-merge enabled)
-templates/prompts/analysis.md.hbs       — AI fingerprint analysis prompt
-templates/prompts/skills.md.hbs         — AI skills generation prompt
-templates/prompts/questionnaire.md.hbs  — AI questionnaire prompt
-templates/prompts/architect.md.hbs      — AI architect skill prompt
-src/core/generators/merge.ts            — mergeSections(), parseChunks(), extractSections()
+templates/claude-code/CLAUDE.md.hbs          — primary CLAUDE.md template (section-merge enabled)
+templates/prompts/analysis.md.hbs            — AI fingerprint analysis prompt
+templates/prompts/skills.md.hbs              — AI skills generation prompt
+templates/prompts/questionnaire.md.hbs       — AI questionnaire prompt
+templates/prompts/architect.md.hbs           — AI architect skill prompt
+templates/prompts/methodology.md.hbs         — Methodology skills prompt
+templates/prompts/guardrails.md.hbs          — Architect guardrails prompt
+templates/prompts/foreign-file-import.md.hbs — Foreign file AI import prompt
+src/core/generators/merge.ts                 — mergeSections(), parseChunks(), extractSections()
 ```
 
 ## Pattern
@@ -50,6 +69,7 @@ src/core/generators/merge.ts            — mergeSections(), parseChunks(), extr
 - Do not put business logic in templates — compute derived values in the generator and pass them as template variables
 - Do not omit section tags on regions users are expected to edit — they will be overwritten on next sync
 - Do not modify `templates/prompts/` without also updating the matching Zod schema and vice versa
+- Do not use the same section tag name across templates that render different content — tags are matched by name during merge
 
 ## Checklist
 
@@ -57,4 +77,4 @@ src/core/generators/merge.ts            — mergeSections(), parseChunks(), extr
 - [ ] Mergeable user-editable sections wrapped with `<!-- openskulls:section:<name> -->` tags
 - [ ] All optional fields guarded with `{{#if}}`
 - [ ] Generator updated to load and compile the template
-- [ ] `npm test` passes (snapshot or content tests updated if needed)
+- [ ] `bun test` passes (snapshot or content tests updated if needed)

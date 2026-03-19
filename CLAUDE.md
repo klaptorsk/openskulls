@@ -85,7 +85,7 @@ Primary language: **TypeScript**.
 | Path | Purpose |
 |---|---|
 | `src/core/fingerprint/types.ts` | Zod schemas, `createFingerprint()`, `hasDrifted()` |
-| `src/core/fingerprint/ai-collector.ts` | `AIFingerprintCollector`, `detectAICLI()`, `invokeAICLI()`, `detectAICLIs()` |
+| `src/core/fingerprint/ai-collector.ts` | `AIFingerprintCollector`, `AICLIAdapter`, `detectAICLI()`, `detectAICLIFor()`, `invokeAICLI()`, `detectAICLIs()`, `normaliseAnalysisResponse()`, `stripJsonFences()` |
 | `src/core/fingerprint/prompt-builder.ts` | `buildAnalysisPrompt()` — pure, builds AI analysis prompt |
 | `src/core/fingerprint/questionnaire-builder.ts` | `generateQuestionnaire()`, `buildQuestionnairePrompt()` |
 | `src/core/fingerprint/skills-builder.ts` | `generateAISkills()`, `AISkill` Zod schema |
@@ -96,8 +96,11 @@ Primary language: **TypeScript**.
 | `src/core/generators/claude-code.ts` | `ClaudeCodeGenerator` — renders CLAUDE.md via Handlebars, emits skills |
 | `src/core/generators/copilot.ts` | `CopilotGenerator` — emits `.github/copilot-instructions.md` |
 | `src/core/generators/codex.ts` | `CodexGenerator` — emits `AGENTS.md` |
+| `src/core/generators/cursor.ts` | `CursorGenerator` — emits `.cursor/rules/project.mdc` |
+| `src/core/generators/registry.ts` | `getBuiltinGenerators()`, `selectGenerators()` — central generator registry |
 | `src/core/generators/merge.ts` | `mergeSections()` — pure section merge, no I/O |
 | `src/core/generators/shared.ts` | `STYLE_LABELS`, `isConventionalCommits()`, `buildWorkflowRuleLines()` |
+| `src/core/generators/workspace-aggregate.ts` | `buildWorkspaceMapSection()` — renders workspace table for root instructions |
 | `src/cli/commands/init.ts` | Full init flow: detect engine → analyse → questionnaire → interview → skills → generate → write |
 | `src/cli/commands/sync.ts` | Sync flow: interactive mode + non-blocking hook mode |
 | `src/cli/commands/hook.ts` | `installGitHook()`, `shouldTriggerSync()`, `matchesTriggerPattern()` |
@@ -110,10 +113,21 @@ Primary language: **TypeScript**.
 | `templates/prompts/questionnaire.md.hbs` | AI questionnaire prompt template |
 | `templates/prompts/architect.md.hbs` | AI architect skill prompt template |
 | `templates/prompts/methodology.md.hbs` | Methodology skills prompt template |
+| `templates/prompts/guardrails.md.hbs` | Architect guardrails prompt template |
+| `templates/prompts/foreign-file-import.md.hbs` | Foreign file AI import prompt template |
 | `src/core/packages/manifest.ts` | `SkullPackManifest` Zod schema for pack TOML format |
 | `src/core/packages/loader.ts` | `loadInstalledPacks()`, pack-to-SkullPackage transformation |
 | `src/core/fingerprint/methodology-prompt.ts` | `buildMethodologyPrompt()` — pure, builds methodology AI prompt |
 | `src/core/fingerprint/methodology-builder.ts` | `generateMethodologySkills()`, `MethodologySkillsResponse` schema |
+| `src/core/fingerprint/guardrails-builder.ts` | `isComplexProject()`, `generateArchitectGuardrails()`, `buildGuardrailsPrompt()` |
+| `src/core/fingerprint/workspace-types.ts` | `WorkspaceFingerprint`, `WorkspaceMapEntry` types |
+| `src/core/fingerprint/workspace-discovery.ts` | `discoverWorkspaces()` — monorepo workspace scanning |
+| `src/core/fingerprint/workspace-collector.ts` | `collectWorkspaceFingerprints()`, `buildAggregateFingerprint()` |
+| `src/core/fingerprint/workspace-cache.ts` | Per-workspace fingerprint I/O (`saveWorkspaceFingerprint()`, `loadAllWorkspaceFingerprints()`) |
+| `src/core/fingerprint/foreign-file-types.ts` | `ForeignFileContext`, `ForeignFileScan` types |
+| `src/core/fingerprint/foreign-file-detector.ts` | `scanForeignFiles()`, `isForeignFile()`, `MANAGED_INSTRUCTION_FILES` |
+| `src/core/fingerprint/foreign-file-importer.ts` | `importForeignFiles()`, `mergeForeignContextIntoQA()` |
+| `src/core/config/types.ts` | `loadEnabledTargets()`, `loadWorkflowConfig()`, `loadWorkspaceConfig()`, Zod config schemas |
 | `src/cli/commands/add.ts` | `registerAdd()` — `openskulls add github:user/repo` |
 | `src/cli/commands/remove.ts` | `registerRemove()` — `openskulls remove <name>` |
 | `src/cli/commands/list.ts` | `registerList()` — `openskulls list` |
@@ -134,8 +148,8 @@ Primary language: **TypeScript**.
 | T-AI | AI-generated skills — second AI call, emits `.claude/skills/` + per-skill SKILL.md | ✅ |
 | T-6 | Architect skill — optional third AI call, domain-expert `/architect-review` command | ✅ |
 | R-1 | Generator refactor — extract shared helpers into `generators/shared.ts` | ✅ |
-| R-2 | Generator registry — `getBuiltinGenerators()` to replace hardcoded init/sync branching | ⬜ |
-| R-3 | Wire registry into CLI — replace hardcoded generator instantiation | ⬜ |
+| R-2 | Generator registry — `getBuiltinGenerators()` to replace hardcoded init/sync branching | ✅ |
+| R-3 | Wire registry into CLI — replace hardcoded generator instantiation | ✅ |
 | 7 | Dependency drift check + `openskulls audit` command | ⬜ |
 | P-1 | Git-native skill packs — `InstalledPackEntry`, `SkullPackManifest`, `loadInstalledPacks()` | ✅ |
 | P-2 | Methodology skills — `generateMethodologySkills()`, wired into init + sync | ✅ |

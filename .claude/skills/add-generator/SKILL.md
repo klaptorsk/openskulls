@@ -15,42 +15,71 @@ Reference for implementing a new file generator following the no-I/O, GeneratedF
 - Generator methods return `GeneratedFile[]` — NEVER write to disk
 - Use `repoFile(path, content)` for files that should be committed to the repo
 - Use `personalFile(path, content)` for files that should be gitignored
-- Implement `generate(fingerprint: RepoFingerprint): GeneratedFile[]`
+- Implement `generate(input: GeneratorInput): GeneratedFile[]` — input contains fingerprint, aiSkills, workflowConfig, userAnswers, architectGuardrails, workspaceMap, and foreignSkills
+- Register the generator in `src/core/generators/registry.ts` — do NOT wire directly into init/sync
 - Handlebars templates live in `templates/<generator-name>/`
-- Load templates via `fs.readFileSync` at call time — do not cache at module level in tests
 - Shared rendering helpers belong in `src/core/generators/shared.ts`
+
+## GeneratorInput Shape
+
+```typescript
+interface GeneratorInput {
+  fingerprint: RepoFingerprint
+  aiSkills?: AISkill[]                    // may be empty if target doesn't use skills
+  workflowConfig: WorkflowConfig
+  userAnswers?: Record<string, string>
+  architectGuardrails?: ArchitectGuardrails  // module ownership, layer rules, forbidden patterns
+  workspaceMap?: WorkspaceMapEntry[]         // monorepo workspace summaries
+  foreignSkills?: ForeignSkill[]             // skills from existing AI instruction files
+}
+```
 
 ## Key Files
 
 ```
-src/core/generators/base.ts        — BaseGenerator, GeneratedFile, repoFile(), personalFile()
-src/core/generators/claude-code.ts — ClaudeCodeGenerator (reference implementation)
-src/core/generators/copilot.ts    — CopilotGenerator (simpler reference)
-src/core/generators/shared.ts     — STYLE_LABELS, buildWorkflowRuleLines(), isConventionalCommits()
-templates/claude-code/             — Handlebars templates for ClaudeCodeGenerator
+src/core/generators/base.ts                  — BaseGenerator, GeneratedFile, GeneratorInput, repoFile(), personalFile()
+src/core/generators/registry.ts              — getBuiltinGenerators(), selectGenerators() — register here
+src/core/generators/claude-code.ts           — ClaudeCodeGenerator (full reference: skills, workspace map, guardrails)
+src/core/generators/copilot.ts               — CopilotGenerator (simpler reference, no skills)
+src/core/generators/cursor.ts                — CursorGenerator (YAML frontmatter + alwaysApply rule format)
+src/core/generators/shared.ts                — STYLE_LABELS, buildWorkflowRuleLines(), isConventionalCommits()
+src/core/generators/workspace-aggregate.ts   — buildWorkspaceMapSection() — shared workspace table builder
+templates/                                    — add templates/<generator>/ here
 ```
 
 ## Pattern
 
 ```typescript
 // src/core/generators/myengine.ts
-import { BaseGenerator, GeneratedFile, repoFile } from './base.js'
-import type { RepoFingerprint } from '../fingerprint/types.js'
-import Handlebars from 'handlebars'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { join, dirname } from 'node:path'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
+import { BaseGenerator, type GeneratorInput, type GeneratedFile, repoFile } from './base.js'
 
 export class MyEngineGenerator extends BaseGenerator {
-  generate(fingerprint: RepoFingerprint): GeneratedFile[] {
-    const tplPath = join(__dirname, '../../../templates/myengine/FILE.hbs')
-    const template = Handlebars.compile(readFileSync(tplPath, 'utf8'))
-    const content = template({ fingerprint })
-    return [repoFile('MY_ENGINE_FILE.md', content)]
+  readonly toolId = 'myengine'
+
+  generate(input: GeneratorInput): GeneratedFile[] {
+    const { fingerprint, aiSkills, architectGuardrails, workspaceMap } = input
+    const lines: string[] = []
+
+    // Build content using fingerprint data
+    lines.push(`# ${fingerprint.repoName}`)
+
+    // Include workspace map if monorepo
+    if (workspaceMap && workspaceMap.length > 0) {
+      lines.push(buildWorkspaceMapSection(workspaceMap))
+    }
+
+    // Include guardrails if generated
+    if (architectGuardrails) {
+      lines.push(buildGuardrailsSection(architectGuardrails))
+    }
+
+    return [repoFile('.myengine/instructions.md', lines.join('\n'), 'merge_sections')]
   }
 }
+
+// src/core/generators/registry.ts — register it
+import { MyEngineGenerator } from './myengine.js'
+// Add to getBuiltinGenerators() array
 ```
 
 ## Anti-Patterns
@@ -58,12 +87,14 @@ export class MyEngineGenerator extends BaseGenerator {
 - Do not call `fs.writeFileSync` inside a generator — only the CLI layer writes
 - Do not throw from `generate()` for missing optional fields — use safe defaults
 - Do not hardcode strings that belong in a Handlebars template
+- Do not wire generators directly into init.ts/sync.ts — use the registry
 
 ## Checklist
 
-- [ ] Generator class created in `src/core/generators/<name>.ts`
-- [ ] Handlebars template added to `templates/<name>/`
-- [ ] Generator instantiated and called in `src/cli/commands/init.ts` and `sync.ts`
+- [ ] Generator class created in `src/core/generators/<name>.ts` with `toolId`
+- [ ] Generator registered in `src/core/generators/registry.ts`
+- [ ] Handlebars template added to `templates/<name>/` (if using templates)
+- [ ] Handles optional `workspaceMap` and `architectGuardrails` inputs
 - [ ] Unit test covers at least the happy-path output
-- [ ] `npm test` passes
+- [ ] `bun test` passes
 - [ ] README.md updated
