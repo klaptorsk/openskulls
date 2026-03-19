@@ -136,8 +136,9 @@ verify_install() {
     die "Installation failed."
   fi
 
+  spin_start "Verifying…"
   version=$(openskulls --version 2>/dev/null || echo "unknown")
-  log_ok "openskulls ${version} ready"
+  spin_stop_ok "openskulls ${version} ready"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────

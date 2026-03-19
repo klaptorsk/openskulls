@@ -7,17 +7,54 @@ param(
   [switch]$Update
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference  = "Stop"
+$ProgressPreference     = "SilentlyContinue"   # suppress Invoke-WebRequest's own progress bar
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $Repo      = "klaptorsk/openskulls"
 $InstallDir = if ($env:OPENSKULLS_INSTALL_DIR) { $env:OPENSKULLS_INSTALL_DIR } else { "$env:USERPROFILE\.local\bin" }
 $BinName   = "openskulls.exe"
 $BinPath   = Join-Path $InstallDir $BinName
 
-function Write-Step { param($msg) Write-Host "=> $msg" -ForegroundColor Cyan }
 function Write-Ok   { param($msg) Write-Host ([char]0x2713 + "  $msg") -ForegroundColor Green }
 function Write-Warn { param($msg) Write-Host "!  $msg" -ForegroundColor Yellow }
 function Write-Err  { param($msg) Write-Host ([char]0x2717 + "  $msg") -ForegroundColor Red }
 function Die        { param($msg) Write-Err $msg; exit 1 }
+
+# ── Spinner ───────────────────────────────────────────────────────────────────
+# Braille frames — same sequence as the ora npm package used in the CLI.
+
+function Start-Spinner {
+  param($Message)
+  $shared = [hashtable]::Synchronized(@{ Running = $true })
+  $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+  $rs.Open()
+  $ps = [System.Management.Automation.PowerShell]::Create()
+  $ps.Runspace = $rs
+  [void]$ps.AddScript({
+    param($msg, $shared)
+    $frames = [char[]]@(0x280B, 0x2819, 0x2839, 0x2838, 0x283C, 0x2834, 0x2826, 0x2827, 0x2807, 0x280F)
+    $i = 0
+    while ($shared.Running) {
+      [Console]::Write("`r$($frames[$i % $frames.Length]) $msg")
+      Start-Sleep -Milliseconds 80
+      $i++
+    }
+  }).AddArgument($Message).AddArgument($shared)
+  $handle = $ps.BeginInvoke()
+  return @{ PS = $ps; RS = $rs; Handle = $handle; Shared = $shared }
+}
+
+function Stop-Spinner {
+  param($s, $Msg, [switch]$Fail)
+  $s.Shared.Running = $false
+  Start-Sleep -Milliseconds 120   # let the spinner thread notice and exit
+  $s.PS.Dispose()
+  $s.RS.Dispose()
+  $icon  = if ($Fail) { [char]0x2717 } else { [char]0x2713 }
+  $color = if ($Fail) { "Red" } else { "Green" }
+  Write-Host "`r$icon  $Msg" -ForegroundColor $color
+}
 
 # ── Detect platform ───────────────────────────────────────────────────────────
 
@@ -36,16 +73,16 @@ function Install-Binary {
   param($platform)
   $url = "https://github.com/$Repo/releases/latest/download/openskulls-$platform.exe"
 
-  Write-Step "Downloading openskulls for $platform..."
-
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+
+  $spin = Start-Spinner "Installing openskulls…"
   try {
     Invoke-WebRequest -Uri $url -OutFile $BinPath -UseBasicParsing
+    Stop-Spinner $spin "Installed to $BinPath"
   } catch {
-    Die "Download failed. Check https://github.com/$Repo/releases"
+    Stop-Spinner $spin "Download failed" -Fail
+    Die "Check https://github.com/$Repo/releases to download manually."
   }
-
-  Write-Ok "Installed to $BinPath"
 }
 
 # ── Ensure install dir is in PATH ─────────────────────────────────────────────
@@ -68,8 +105,9 @@ function Verify-Install {
     Write-Warn "Open a new terminal, or run: $BinPath --version"
     return
   }
+  $spin = Start-Spinner "Verifying…"
   $ver = & openskulls --version 2>$null
-  Write-Ok "openskulls $ver ready"
+  Stop-Spinner $spin "openskulls $ver ready"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
