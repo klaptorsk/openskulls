@@ -165,8 +165,9 @@ export class AIFingerprintCollector {
     const prompt = buildAnalysisPrompt(basename(repoRoot), fileTree, configContents)
     const rawResponse = await invokeAICLI(cliCommand, prompt, 120_000, logger)
 
-    // Step 6: Parse + Zod-validate response
-    const analysis = AIAnalysisResponse.parse(JSON.parse(stripJsonFences(rawResponse)))
+    // Step 6: Normalise non-conforming responses, then Zod-validate
+    const raw = JSON.parse(stripJsonFences(rawResponse))
+    const analysis = AIAnalysisResponse.parse(normaliseAnalysisResponse(raw))
 
     // Step 7: Compute primary language (highest % wins)
     const languages =
@@ -506,6 +507,66 @@ export function stripJsonFences(text: string): string {
   if (start !== -1 && end > start) return text.slice(start, end + 1)
 
   return stripped // will fail JSON.parse with a sensible error
+}
+
+// ─── Response normalisation ───────────────────────────────────────────────────
+
+/**
+ * Map non-conforming AI responses (e.g. from Copilot) into the expected schema.
+ * Handles common alternative field names and flat-vs-nested differences.
+ * Exported for testing.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normaliseAnalysisResponse(raw: any): Record<string, unknown> {
+  // Already conforming — pass through
+  if (Array.isArray(raw.languages) && raw.languages.length > 0) return raw
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: Record<string, any> = { ...raw }
+
+  // ── languages ──
+  if (!Array.isArray(out.languages) || out.languages.length === 0) {
+    const lang = raw.primary_language ?? raw.language
+    if (typeof lang === 'string') {
+      out.languages = [{ name: lang, confidence: 'high', percentage: 100, evidence: ['AI-detected'] }]
+    }
+  }
+
+  // ── frameworks ──
+  if (!Array.isArray(out.frameworks) || out.frameworks.length === 0) {
+    const fw = raw.framework
+    if (typeof fw === 'string') {
+      out.frameworks = [{ name: fw, confidence: 'high', category: 'utility', evidence: ['AI-detected'] }]
+    }
+  }
+
+  // ── dependencies ──
+  if (!Array.isArray(out.dependencies) || out.dependencies.length === 0) {
+    const deps = raw.key_dependencies ?? raw.dependencies_list
+    if (Array.isArray(deps) && deps.every((d: unknown) => typeof d === 'string')) {
+      const runtime: Record<string, string> = {}
+      for (const d of deps as string[]) runtime[d] = '*'
+      out.dependencies = [{ runtime, dev: {}, peer: {}, sourceFile: 'unknown' }]
+    }
+  }
+
+  // ── architecture.style ──
+  if (out.architecture && typeof out.architecture === 'object') {
+    if (!out.architecture.style) {
+      out.architecture.style = out.architecture.pattern ?? 'unknown'
+    }
+    // Map entry_points → entryPoints
+    if (!out.architecture.entryPoints && Array.isArray(raw.entry_points)) {
+      out.architecture.entryPoints = raw.entry_points
+    }
+  }
+
+  // ── description ──
+  if (!out.description && typeof raw.description === 'string') {
+    out.description = raw.description
+  }
+
+  return out
 }
 
 // ─── File tree scanner ────────────────────────────────────────────────────────

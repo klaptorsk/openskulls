@@ -79,7 +79,7 @@ export const LintingSignal = z.object({
 export type LintingSignal = z.infer<typeof LintingSignal>
 
 export const ArchitectureSignal = z.object({
-  style: z.string(),                                  // "monorepo" | "monolith" | "microservices" | "library"
+  style: z.string().default('unknown'),                // "monorepo" | "monolith" | "microservices" | "library"
   entryPoints: z.array(z.string()).default([]),       // ["src/index.ts", "main.py"]
   moduleStructure: z.array(z.string()).default([]),   // top-level significant dirs
   apiStyle: z.string().optional(),                    // "rest" | "graphql" | "grpc" | "trpc"

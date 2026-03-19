@@ -3,6 +3,7 @@ import { buildAnalysisPrompt } from '../../src/core/fingerprint/prompt-builder.j
 import {
   AIAnalysisResponse,
   detectAICLIs,
+  normaliseAnalysisResponse,
   stripJsonFences,
 } from '../../src/core/fingerprint/ai-collector.js'
 
@@ -240,6 +241,73 @@ describe('detectAICLIs', () => {
   it('returns empty array when no AI CLIs detected', () => {
     const signals = detectAICLIs(['src/main.ts', 'package.json'], new Map())
     expect(signals).toEqual([])
+  })
+})
+
+// ─── normaliseAnalysisResponse ────────────────────────────────────────────────
+
+describe('normaliseAnalysisResponse', () => {
+  it('passes through a conforming response unchanged', () => {
+    const conforming = {
+      languages: [{ name: 'Go', confidence: 'high', percentage: 100, evidence: [] }],
+      frameworks: [],
+      architecture: { style: 'cli' },
+    }
+    const result = normaliseAnalysisResponse(conforming)
+    expect(result.languages).toEqual(conforming.languages)
+  })
+
+  it('maps primary_language to languages array', () => {
+    const raw = { primary_language: 'Python' }
+    const result = normaliseAnalysisResponse(raw)
+    expect(result.languages).toHaveLength(1)
+    expect(result.languages[0].name).toBe('Python')
+    expect(result.languages[0].percentage).toBe(100)
+  })
+
+  it('maps framework string to frameworks array', () => {
+    const raw = { framework: 'Plotly Dash' }
+    const result = normaliseAnalysisResponse(raw)
+    expect(result.frameworks).toHaveLength(1)
+    expect(result.frameworks[0].name).toBe('Plotly Dash')
+  })
+
+  it('maps key_dependencies string array to dependencies', () => {
+    const raw = { key_dependencies: ['dash', 'plotly', 'pyodbc'] }
+    const result = normaliseAnalysisResponse(raw)
+    expect(result.dependencies).toHaveLength(1)
+    expect(result.dependencies[0].runtime).toEqual({ dash: '*', plotly: '*', pyodbc: '*' })
+  })
+
+  it('maps architecture.pattern to architecture.style', () => {
+    const raw = { architecture: { pattern: 'Layered MVC' } }
+    const result = normaliseAnalysisResponse(raw)
+    expect(result.architecture.style).toBe('Layered MVC')
+  })
+
+  it('maps entry_points into architecture.entryPoints', () => {
+    const raw = { architecture: { pattern: 'cli' }, entry_points: ['main.py'] }
+    const result = normaliseAnalysisResponse(raw)
+    expect(result.architecture.entryPoints).toEqual(['main.py'])
+  })
+
+  it('handles copilot-style response end-to-end with Zod', () => {
+    const copilotResponse = {
+      name: 'DashDataDiscovery',
+      description: 'A Dash-based web app',
+      primary_language: 'Python',
+      framework: 'Plotly Dash',
+      key_dependencies: ['dash', 'plotly'],
+      architecture: { pattern: 'Layered MVC' },
+      entry_points: ['main.py'],
+    }
+    const normalised = normaliseAnalysisResponse(copilotResponse)
+    const parsed = AIAnalysisResponse.parse(normalised)
+    expect(parsed.languages[0]?.name).toBe('Python')
+    expect(parsed.frameworks[0]?.name).toBe('Plotly Dash')
+    expect(parsed.architecture.style).toBe('Layered MVC')
+    expect(parsed.architecture.entryPoints).toEqual(['main.py'])
+    expect(parsed.description).toBe('A Dash-based web app')
   })
 })
 
