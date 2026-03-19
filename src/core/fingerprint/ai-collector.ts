@@ -100,7 +100,7 @@ export interface AICLIAdapter {
 const AI_CLI_CANDIDATES: AICLIAdapter[] = [
   { command: 'claude',  invoke: 'stdin' },
   { command: 'codex',   invoke: 'arg'   },
-  { command: 'copilot', invoke: 'stdin'   },
+  { command: 'copilot', invoke: 'arg'   },
 ]
 
 // ─── AI Analysis Response schema ──────────────────────────────────────────────
@@ -323,19 +323,23 @@ export async function invokeAICLI(
 ): Promise<string> {
   logger?.onPrompt(prompt)
 
-  // ── Windows stdin: file-based I/O via PowerShell Start-Process ─────────
+  // ── Windows: route through PowerShell to bypass .cmd wrapper issues ────
   //
-  // Every pipe-based approach fails on Windows because .cmd wrappers (and
-  // bun's compiled child_process) do not reliably forward pipe-based stdin
-  // to the underlying binary.  Pipes via cmd.exe, PowerShell, spawnSync
-  // input, windowsVerbatimArguments — none are reliable.
+  // Two problems on Windows:
+  //  1. stdin mode: .cmd wrappers don't forward pipe-based stdin to the
+  //     underlying binary (e.g. copilot -p - never receives the prompt).
+  //  2. arg mode:  cmd.exe has an 8191-char command-line limit, but analysis
+  //     prompts are typically 10–50 KB.
   //
-  // Nuclear option: bypass ALL pipes.  Write prompt to a temp file, then
-  // use PowerShell's Start-Process with -RedirectStandardInput, which sets
-  // up stdin as a native FILE HANDLE via Windows' CreateProcess STARTUPINFO.
-  // The OS delivers the data — no Node/bun pipe involved at any layer.
-  // Stdout and stderr are also captured to files.
-  if (process.platform === 'win32' && adapter.invoke === 'stdin') {
+  // Solution: run everything through a PowerShell script that reads the
+  // prompt from a temp file and invokes the CLI.  Stdout/stderr are also
+  // captured to files so we don't depend on bun/node pipe forwarding.
+  //
+  //  - stdin adapters: Start-Process -RedirectStandardInput (OS file handle)
+  //  - arg adapters:   $p = Get-Content file; & cmd -p $p  (PS variable,
+  //    no cmd.exe command-line limit — only the 32 K CreateProcess limit
+  //    applies, which covers virtually all repos)
+  if (process.platform === 'win32') {
     const id = `openskulls-${process.pid}-${Date.now()}`
     const dir = tmpdir()
     const inFile  = join(dir, `${id}.in`)
@@ -344,22 +348,34 @@ export async function invokeAICLI(
     const tmpFiles = [inFile, outFile, errFile]
 
     writeFileSync(inFile, prompt, 'utf-8')
-    // Start-Process needs stdout/stderr files to exist before launch
     writeFileSync(outFile, '', 'utf-8')
     writeFileSync(errFile, '', 'utf-8')
 
     const esc = (s: string) => s.replace(/'/g, "''")
-    const psScript = [
-      `$p = Start-Process -FilePath '${esc(adapter.command)}'`,
-      `-ArgumentList @('-p','-')`,
-      `-RedirectStandardInput '${esc(inFile)}'`,
-      `-RedirectStandardOutput '${esc(outFile)}'`,
-      `-RedirectStandardError '${esc(errFile)}'`,
-      `-NoNewWindow -Wait -PassThru`,
-      `; exit $p.ExitCode`,
-    ].join(' ')
-    const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
 
+    let psScript: string
+    if (adapter.invoke === 'stdin') {
+      // stdin mode: use Start-Process with native file-handle redirection
+      psScript = [
+        `$p = Start-Process -FilePath '${esc(adapter.command)}'`,
+        `-ArgumentList @('-p','-')`,
+        `-RedirectStandardInput '${esc(inFile)}'`,
+        `-RedirectStandardOutput '${esc(outFile)}'`,
+        `-RedirectStandardError '${esc(errFile)}'`,
+        `-NoNewWindow -Wait -PassThru`,
+        `; exit $p.ExitCode`,
+      ].join(' ')
+    } else {
+      // arg mode: read prompt from file, pass as -p argument via PS variable
+      psScript = [
+        `$prompt = Get-Content -LiteralPath '${esc(inFile)}' -Raw -Encoding UTF8;`,
+        `$out = & '${esc(adapter.command)}' -p $prompt 2>'${esc(errFile)}';`,
+        `$out | Out-File -FilePath '${esc(outFile)}' -Encoding UTF8;`,
+        `exit $LASTEXITCODE`,
+      ].join(' ')
+    }
+
+    const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
     const r = spawnSync('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], {
       timeout: timeoutMs,
     })
@@ -374,11 +390,14 @@ export async function invokeAICLI(
       throw new Error(`${adapter.command} exited ${String(r.status)}: ${err}`)
     }
 
+    // Out-File adds a UTF-8 BOM — strip it if present
+    if (out.charCodeAt(0) === 0xFEFF) out = out.slice(1)
+
     logger?.onResponse(out)
     return out
   }
 
-  // ── Non-Windows (or arg-mode): async spawn ─────────────────────────────
+  // ── Non-Windows: async spawn ───────────────────────────────────────────
 
   return new Promise((resolve, reject) => {
     const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
