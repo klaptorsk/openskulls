@@ -82,6 +82,7 @@ OpenSkulls scans the repo with AI, detects your stack, asks a few workflow quest
 
 - `CLAUDE.md` — structured project context for Claude Code
 - `.github/copilot-instructions.md` — context for GitHub Copilot (if detected)
+- `.github/prompts/` — reusable Copilot prompt files (built-in + AI-generated, if Copilot detected)
 - `.cursor/rules/project.mdc` — context rule for Cursor (if detected)
 - `AGENTS.md` — context for Codex (if detected)
 - `.claude/skills.md` — project-specific AI skills overview
@@ -211,6 +212,10 @@ The second AI call generates project-specific skills: slash commands with rich r
 ```
 
 Skills are non-fatal: if the AI call fails, `init` and `sync` continue without them.
+
+#### `.github/prompts/` (Copilot)
+
+When GitHub Copilot is an enabled target, AI-generated skills are also emitted as Copilot reusable prompt files at `.github/prompts/<id>.prompt.md`. Each prompt file has YAML frontmatter with a `description` field and becomes a `/<id>` slash command in Copilot Chat. Built-in prompts (`run-tests`, `commit`) and pack skills are emitted the same way.
 
 #### `.claude/commands/`
 
@@ -441,6 +446,7 @@ Context is not one thing. OpenSkulls enforces a clear separation between what be
 [repo]/.claude/skills/                # AI-generated per-skill reference docs (committed)
 [repo]/.claude/commands/              # Built-in and package workflow scripts (committed)
 [repo]/.claude/settings.json          # Claude Code settings (committed)
+[repo]/.github/prompts/               # Copilot reusable prompt files (committed, if Copilot target)
 ```
 
 **Personal context** (`~/.claude/`) is never committed. It follows you across every repo.
@@ -636,7 +642,8 @@ For full module structure, data flow diagrams, config file schemas, and an exten
 | **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code, Cursor, Copilot, Codex generators — workflow rules — parallel skill generation — git hook |
 | **v0.2** | Git-native skill packs (`add`, `remove`, `list`) — AI methodology skills (architect, workflow-lifecycle, verify, tdd) — pack skill emission |
 | **v0.3** | Architectural guardrails — Monorepo / multi-workspace support — Foreign file inheritance |
-| **v0.4** | `openskulls audit` — `openskulls sync --watch` — pack auto-update on sync |
+| **v0.4** | Copilot prompt file generation — skills parity across generators |
+| **v0.5** | `openskulls audit` — `openskulls sync --watch` — pack auto-update on sync |
 | **v1.0** | Platform: org-level context — agent performance metrics — multi-agent profiles |
 
 ---
