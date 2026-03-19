@@ -12,7 +12,9 @@
  */
 
 import { spawn } from 'node:child_process'
+import { unlinkSync, writeFileSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
 import { z } from 'zod'
 import type { ProjectConfig } from '../config/types.js'
@@ -322,36 +324,41 @@ export async function invokeAICLI(
   logger?.onPrompt(prompt)
 
   return new Promise((resolve, reject) => {
-    // Spawn the child using the shell mode detected during CLI discovery.
+    // Windows stdin fix: .cmd wrappers (npm-installed CLIs) and the shell
+    // layers around them (cmd.exe, PowerShell) do NOT reliably forward data
+    // written to Node's child_process stdin to the underlying binary.
+    // This is true regardless of the shell mode detected during discovery.
     //
-    // powershell mode: prompt is passed via an env var (__OPENSKULLS_PROMPT)
-    //   so PowerShell expands it cleanly without quoting or cmd-line length issues.
-    //   The PS command reads:  copilot -p $env:__OPENSKULLS_PROMPT
-    //
-    // stdin mode: `claude -p -` — prompt is written to child.stdin after spawn.
-    // arg mode:   `codex -p "…"` — prompt is the -p argument (default shell escape).
-    //
-    // Windows stdin fix: .cmd wrappers (shell: true / cmd.exe) do not forward
-    // stdin to the underlying binary. Upgrade to powershell so the prompt is
-    // delivered via env var instead, completely bypassing stdin.
-    let effectiveShell = adapter.shell
-    if (effectiveShell === true && process.platform === 'win32' && adapter.invoke === 'stdin') {
-      effectiveShell = 'powershell'
+    // Fix: write the prompt to a temp file and deliver it via a shell-level
+    // pipeline (`type file | command` for cmd.exe, `Get-Content | command`
+    // for PowerShell). The shell sets up stdin from the pipe BEFORE the .cmd
+    // wrapper starts, so the underlying binary receives the full prompt.
+    const useFileStdin = process.platform === 'win32' && adapter.invoke === 'stdin'
+
+    let tmpFile: string | undefined
+    const cleanupTmp = () => {
+      if (tmpFile) { try { unlinkSync(tmpFile) } catch {} }
     }
 
     let child: ReturnType<typeof spawn>
-    if (effectiveShell === 'powershell') {
-      // Use -EncodedCommand so the prompt (which contains JSON with {}, "", $,
-      // newlines, etc.) is never expanded inline inside a -Command string.
-      // Pipe via stdin to also dodge Windows command-line length limits.
-      const psScript = `$p = $env:__OPENSKULLS_PROMPT; $p | & '${adapter.command}' -p -`
-      const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
-      child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], {
-        env: { ...process.env, __OPENSKULLS_PROMPT: prompt },
-      })
+
+    if (useFileStdin) {
+      tmpFile = join(tmpdir(), `openskulls-${process.pid}-${Date.now()}.txt`)
+      writeFileSync(tmpFile, prompt, 'utf-8')
+
+      if (adapter.shell === 'powershell') {
+        // Command only accessible from PowerShell — use Get-Content pipeline
+        const escaped = tmpFile.replace(/'/g, "''")
+        const psScript = `Get-Content -LiteralPath '${escaped}' -Raw -Encoding UTF8 | & '${adapter.command}' -p -`
+        const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
+        child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded])
+      } else {
+        // cmd.exe pipeline: `type` reads file, pipe delivers it as stdin
+        child = spawn('cmd.exe', ['/c', `type "${tmpFile}" | "${adapter.command}" -p -`])
+      }
     } else {
       const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
-      child = spawn(adapter.command, args, { shell: effectiveShell === true })
+      child = spawn(adapter.command, args, { shell: adapter.shell === true })
     }
 
     let out = ''
@@ -359,19 +366,22 @@ export async function invokeAICLI(
 
     const timer = setTimeout(() => {
       child.kill()
+      cleanupTmp()
       reject(new Error(`AI CLI timed out after ${timeoutMs}ms`))
     }, timeoutMs)
 
     child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
     child.stderr?.on('data', (d: Buffer) => { err += d.toString() })
 
-    child.on('error', (e: Error) => { 
+    child.on('error', (e: Error) => {
       clearTimeout(timer)
+      cleanupTmp()
       reject(e)
     })
 
     child.on('close', (code: number | null) => {
       clearTimeout(timer)
+      cleanupTmp()
       if (code === 0) {
         logger?.onResponse(out)
         resolve(out)
@@ -380,7 +390,8 @@ export async function invokeAICLI(
       }
     })
 
-    if (adapter.invoke === 'stdin' && effectiveShell !== 'powershell') {
+    // Non-Windows stdin: write prompt directly to child's stdin pipe
+    if (adapter.invoke === 'stdin' && !useFileStdin) {
       child.stdin?.on('error', () => { /* ignore broken pipe */ })
       child.stdin?.write(prompt)
       child.stdin?.end()
