@@ -11,8 +11,8 @@
  * they consume RepoFingerprint which is unchanged.
  */
 
-import { spawn } from 'node:child_process'
-import { unlinkSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
@@ -323,54 +323,72 @@ export async function invokeAICLI(
 ): Promise<string> {
   logger?.onPrompt(prompt)
 
+  // ── Windows stdin: file-based I/O via PowerShell Start-Process ─────────
+  //
+  // Every pipe-based approach fails on Windows because .cmd wrappers (and
+  // bun's compiled child_process) do not reliably forward pipe-based stdin
+  // to the underlying binary.  Pipes via cmd.exe, PowerShell, spawnSync
+  // input, windowsVerbatimArguments — none are reliable.
+  //
+  // Nuclear option: bypass ALL pipes.  Write prompt to a temp file, then
+  // use PowerShell's Start-Process with -RedirectStandardInput, which sets
+  // up stdin as a native FILE HANDLE via Windows' CreateProcess STARTUPINFO.
+  // The OS delivers the data — no Node/bun pipe involved at any layer.
+  // Stdout and stderr are also captured to files.
+  if (process.platform === 'win32' && adapter.invoke === 'stdin') {
+    const id = `openskulls-${process.pid}-${Date.now()}`
+    const dir = tmpdir()
+    const inFile  = join(dir, `${id}.in`)
+    const outFile = join(dir, `${id}.out`)
+    const errFile = join(dir, `${id}.err`)
+    const tmpFiles = [inFile, outFile, errFile]
+
+    writeFileSync(inFile, prompt, 'utf-8')
+    // Start-Process needs stdout/stderr files to exist before launch
+    writeFileSync(outFile, '', 'utf-8')
+    writeFileSync(errFile, '', 'utf-8')
+
+    const esc = (s: string) => s.replace(/'/g, "''")
+    const psScript = [
+      `$p = Start-Process -FilePath '${esc(adapter.command)}'`,
+      `-ArgumentList @('-p','-')`,
+      `-RedirectStandardInput '${esc(inFile)}'`,
+      `-RedirectStandardOutput '${esc(outFile)}'`,
+      `-RedirectStandardError '${esc(errFile)}'`,
+      `-NoNewWindow -Wait -PassThru`,
+      `; exit $p.ExitCode`,
+    ].join(' ')
+    const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
+
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], {
+      timeout: timeoutMs,
+    })
+
+    let out = '', err = ''
+    try { out = readFileSync(outFile, 'utf-8') } catch { /* file may not exist on timeout */ }
+    try { err = readFileSync(errFile, 'utf-8') } catch {}
+    for (const f of tmpFiles) { try { unlinkSync(f) } catch {} }
+
+    if (r.error) throw r.error
+    if (r.status !== 0) {
+      throw new Error(`${adapter.command} exited ${String(r.status)}: ${err}`)
+    }
+
+    logger?.onResponse(out)
+    return out
+  }
+
+  // ── Non-Windows (or arg-mode): async spawn ─────────────────────────────
+
   return new Promise((resolve, reject) => {
-    // Windows stdin fix: .cmd wrappers (npm-installed CLIs) and the shell
-    // layers around them (cmd.exe, PowerShell) do NOT reliably forward data
-    // written to Node's child_process stdin to the underlying binary.
-    // This is true regardless of the shell mode detected during discovery.
-    //
-    // Fix: write the prompt to a temp file and deliver it via a shell-level
-    // pipeline (`type file | command` for cmd.exe, `Get-Content | command`
-    // for PowerShell). The shell sets up stdin from the pipe BEFORE the .cmd
-    // wrapper starts, so the underlying binary receives the full prompt.
-    const useFileStdin = process.platform === 'win32' && adapter.invoke === 'stdin'
-
-    let tmpFile: string | undefined
-    const cleanupTmp = () => {
-      if (tmpFile) { try { unlinkSync(tmpFile) } catch {} }
-    }
-
-    let child: ReturnType<typeof spawn>
-
-    if (useFileStdin) {
-      tmpFile = join(tmpdir(), `openskulls-${process.pid}-${Date.now()}.txt`)
-      writeFileSync(tmpFile, prompt, 'utf-8')
-
-      if (adapter.shell === 'powershell') {
-        // Command only accessible from PowerShell — use Get-Content pipeline
-        const escaped = tmpFile.replace(/'/g, "''")
-        const psScript = `Get-Content -LiteralPath '${escaped}' -Raw -Encoding UTF8 | & '${adapter.command}' -p -`
-        const encoded = Buffer.from(psScript, 'utf16le').toString('base64')
-        child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded])
-      } else {
-        // cmd.exe pipeline: `type` reads file, pipe delivers it as stdin.
-        // windowsVerbatimArguments stops Node from escaping the inner quotes
-        // (Node uses \" which cmd.exe doesn't understand).
-        child = spawn('cmd.exe', ['/c', `type "${tmpFile}" | ${adapter.command} -p -`], {
-          windowsVerbatimArguments: true,
-        })
-      }
-    } else {
-      const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
-      child = spawn(adapter.command, args, { shell: adapter.shell === true })
-    }
+    const args = adapter.invoke === 'stdin' ? ['-p', '-'] : ['-p', prompt]
+    const child = spawn(adapter.command, args, { shell: adapter.shell === true })
 
     let out = ''
     let err = ''
 
     const timer = setTimeout(() => {
       child.kill()
-      cleanupTmp()
       reject(new Error(`AI CLI timed out after ${timeoutMs}ms`))
     }, timeoutMs)
 
@@ -379,13 +397,11 @@ export async function invokeAICLI(
 
     child.on('error', (e: Error) => {
       clearTimeout(timer)
-      cleanupTmp()
       reject(e)
     })
 
     child.on('close', (code: number | null) => {
       clearTimeout(timer)
-      cleanupTmp()
       if (code === 0) {
         logger?.onResponse(out)
         resolve(out)
@@ -394,8 +410,7 @@ export async function invokeAICLI(
       }
     })
 
-    // Non-Windows stdin: write prompt directly to child's stdin pipe
-    if (adapter.invoke === 'stdin' && !useFileStdin) {
+    if (adapter.invoke === 'stdin') {
       child.stdin?.on('error', () => { /* ignore broken pipe */ })
       child.stdin?.write(prompt)
       child.stdin?.end()
