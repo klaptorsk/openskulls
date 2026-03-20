@@ -92,8 +92,8 @@ export function registerSync(program: Command): void {
     })
 }
 
-/** Targets that emit .claude/skills/ files — used to skip unnecessary AI calls. */
-const SKILL_TARGETS = new Set(['claude_code', 'codex'])
+/** Targets that emit skill files — used to skip unnecessary AI calls. */
+const SKILL_TARGETS = new Set(['claude_code', 'copilot', 'codex'])
 
 // ─── Interactive mode ─────────────────────────────────────────────────────────
 

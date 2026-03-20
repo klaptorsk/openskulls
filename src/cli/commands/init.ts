@@ -326,9 +326,9 @@ Examples:
 
       // ── Steps 5+6: Generate skills (and optionally architect) ────────────
       //   Sequential by default; parallel when useSubagents + architectEnabled.
-      //   Skills are only useful for targets that emit them (claude_code, codex).
+      //   Skills are only useful for targets that emit them (claude_code, copilot, codex).
 
-      const SKILL_TARGETS = new Set(['claude_code', 'codex'])
+      const SKILL_TARGETS = new Set(['claude_code', 'copilot', 'codex'])
       const needsSkills = selectedToolIds.some((id) => SKILL_TARGETS.has(id))
 
       let aiSkills: AISkill[] = []
