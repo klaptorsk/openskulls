@@ -116,6 +116,6 @@ export async function generateArchitectSkill(
 ): Promise<AISkill> {
   const cliCommand = await detectAICLI()
   const prompt = buildArchitectPrompt(fingerprint, workflowConfig, qa)
-  const raw = await invokeAICLI(cliCommand, prompt, 120_000, logger)
+  const raw = await invokeAICLI(cliCommand, prompt, undefined, logger)
   return ArchitectSkill.parse(JSON.parse(stripJsonFences(raw)))
 }

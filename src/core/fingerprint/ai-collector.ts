@@ -163,7 +163,7 @@ export class AIFingerprintCollector {
 
     // Step 5: Build prompt and invoke AI
     const prompt = buildAnalysisPrompt(basename(repoRoot), fileTree, configContents)
-    const rawResponse = await invokeAICLI(cliCommand, prompt, 120_000, logger)
+    const rawResponse = await invokeAICLI(cliCommand, prompt, undefined, logger)
 
     // Step 6: Normalise non-conforming responses, then Zod-validate
     const raw = JSON.parse(stripJsonFences(rawResponse))
@@ -322,7 +322,7 @@ export async function detectAICLIFor(toolIds: string[]): Promise<AICLIAdapter> {
 export async function invokeAICLI(
   adapter: AICLIAdapter,
   prompt: string,
-  timeoutMs = 120_000,
+  timeoutMs = 180_000,
   logger?: VerboseLogger,
 ): Promise<string> {
   logger?.onPrompt(prompt)

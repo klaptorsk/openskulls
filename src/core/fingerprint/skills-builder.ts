@@ -35,7 +35,7 @@ export async function generateAISkills(
 ): Promise<AISkill[]> {
   const cliCommand = await detectAICLI()
   const prompt = buildSkillsPrompt(fingerprint, qa)
-  const raw = await invokeAICLI(cliCommand, prompt, 120_000, logger)
+  const raw = await invokeAICLI(cliCommand, prompt, undefined, logger)
   const parsed = AISkillsResponse.parse(JSON.parse(stripJsonFences(raw)))
   return parsed.skills
 }

@@ -101,7 +101,7 @@ export async function generateArchitectGuardrails(
 ): Promise<ArchitectGuardrails> {
   const cliCommand = await detectAICLI()
   const prompt = buildGuardrailsPrompt(fingerprint, qa, workspaceMap)
-  const raw = await invokeAICLI(cliCommand, prompt, 120_000, logger)
+  const raw = await invokeAICLI(cliCommand, prompt, undefined, logger)
   return ArchitectGuardrails.parse(JSON.parse(stripJsonFences(raw)))
 }
 
