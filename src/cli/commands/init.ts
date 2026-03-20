@@ -299,7 +299,7 @@ Examples:
             onPrompt:   (p) => { questionnaireCapture.prompt = p },
             onResponse: (r) => { questionnaireCapture.response = r },
           }
-          aiQuestions = await generateQuestionnaire(fingerprint, questionnaireLogger)
+          aiQuestions = await generateQuestionnaire(fingerprint, questionnaireLogger, adapter)
           if (aiQuestions.length > 0) {
             qSpin.succeed(`Generated ${aiQuestions.length} contextual questions`)
           } else {
@@ -349,8 +349,8 @@ Examples:
         // ── Parallel path ────────────────────────────────────────────────────
         const spin = spinner('Generating skills and architect skill in parallel…').start()
         const [skillsResult, archResult] = await Promise.allSettled([
-          generateAISkills(fingerprint, skillsLogger, qaArg),
-          generateArchitectSkill(fingerprint, workflowConfig, archLogger, qaArg),
+          generateAISkills(fingerprint, skillsLogger, qaArg, adapter),
+          generateArchitectSkill(fingerprint, workflowConfig, archLogger, qaArg, adapter),
         ])
         const skillsOk = skillsResult.status === 'fulfilled'
         const archOk   = archResult.status === 'fulfilled'
@@ -372,7 +372,7 @@ Examples:
         // ── Sequential path ──────────────────────────────────────────────────
         const skillsSpin = spinner('Generating project skills…').start()
         try {
-          aiSkills = await generateAISkills(fingerprint, skillsLogger, qaArg)
+          aiSkills = await generateAISkills(fingerprint, skillsLogger, qaArg, adapter)
           skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
         } catch (err) {
           skillsSpin.warn('Could not generate skills — skipping')
@@ -382,7 +382,7 @@ Examples:
         if (workflowConfig.architectEnabled) {
           const archSpin = spinner('Generating architect skill…').start()
           try {
-            const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger, qaArg)
+            const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger, qaArg, adapter)
             aiSkills = [architectSkill, ...aiSkills]
             archSpin.succeed('Generated architect skill')
           } catch (err) {
@@ -413,7 +413,7 @@ Examples:
         try {
           const taskSkillIds = aiSkills.map((s) => s.id)
           const methodologySkills = await generateMethodologySkills(
-            fingerprint, methLogger, qaArg, [], taskSkillIds,
+            fingerprint, methLogger, qaArg, [], taskSkillIds, adapter,
           )
           aiSkills = [...aiSkills, ...methodologySkills]
           methSpin.succeed(`Generated ${methodologySkills.length} methodology skills`)
@@ -468,7 +468,7 @@ Examples:
             onPrompt:   (p) => { guardrailsCapture.prompt = p },
             onResponse: (r) => { guardrailsCapture.response = r },
           }
-          architectGuardrails = await generateArchitectGuardrails(fingerprint, guardrailsLogger, qaArg, workspaceMap ?? undefined)
+          architectGuardrails = await generateArchitectGuardrails(fingerprint, guardrailsLogger, qaArg, workspaceMap ?? undefined, adapter)
           guardrailsSpin.succeed('Generated architectural guardrails')
         } catch (err) {
           guardrailsSpin.warn('Could not generate guardrails — skipping')

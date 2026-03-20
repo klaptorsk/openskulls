@@ -10,7 +10,7 @@
 
 import Handlebars from 'handlebars'
 import { z } from 'zod'
-import { detectAICLI, invokeAICLI, stripJsonFences, type VerboseLogger } from './ai-collector.js'
+import { detectAICLI, invokeAICLI, stripJsonFences, type AICLIAdapter, type VerboseLogger } from './ai-collector.js'
 import type { RepoFingerprint } from './types.js'
 import { GUARDRAILS_TEMPLATE } from '../../generated/templates.js'
 
@@ -98,8 +98,9 @@ export async function generateArchitectGuardrails(
   logger?: VerboseLogger,
   qa?: Record<string, string>,
   workspaceMap?: readonly import('./workspace-types.js').WorkspaceMapEntry[],
+  adapter?: AICLIAdapter,
 ): Promise<ArchitectGuardrails> {
-  const cliCommand = await detectAICLI()
+  const cliCommand = adapter ?? await detectAICLI()
   const prompt = buildGuardrailsPrompt(fingerprint, qa, workspaceMap)
   const raw = await invokeAICLI(cliCommand, prompt, undefined, logger)
   return ArchitectGuardrails.parse(JSON.parse(stripJsonFences(raw)))

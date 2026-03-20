@@ -3,19 +3,19 @@
  *
  * Produces:
  *   .github/copilot-instructions.md   — project context (merge_sections strategy)
- *   .github/prompts/*.prompt.md       — reusable prompt files (built-in + AI-generated)
+ *   .claude/skills/<id>/SKILL.md      — per-skill reference docs (shared with Claude Code)
+ *   .claude/commands/*.md             — built-in workflow scripts
  *
  * Stateless and pure: same GeneratorInput → same GeneratedFile[].
  */
 
 import type { WorkflowConfig } from '../config/types.js'
 import type { RepoFingerprint } from '../fingerprint/types.js'
-import type { AISkill } from '../fingerprint/skills-builder.js'
 import type { WorkspaceMapEntry } from '../fingerprint/workspace-types.js'
 import { skillsForTool } from '../packages/types.js'
 import { buildGuardrailsSection, type ArchitectGuardrails } from '../fingerprint/guardrails-builder.js'
 import { BaseGenerator, repoFile, type GeneratedFile, type GeneratorInput } from './base.js'
-import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines } from './shared.js'
+import { STYLE_LABELS, isConventionalCommits, buildWorkflowRuleLines, buildSkillsOverview, buildSkillFile } from './shared.js'
 import { buildWorkspaceMapSection } from './workspace-aggregate.js'
 
 // ─── Generator ────────────────────────────────────────────────────────────────
@@ -28,40 +28,59 @@ export class CopilotGenerator extends BaseGenerator {
   generate(input: GeneratorInput): GeneratedFile[] {
     const { fingerprint, installedPackages } = input
     const files: GeneratedFile[] = []
+    const conventionalCommits = isConventionalCommits(fingerprint)
 
     // ── copilot-instructions.md ───────────────────────────────────────────
     const content = buildCopilotInstructions(fingerprint, input.workflowConfig, input.architectGuardrails, input.workspaceMap ? [...input.workspaceMap] : undefined)
     files.push(repoFile('.github/copilot-instructions.md', content, 'merge_sections'))
 
-    // ── Built-in prompts ──────────────────────────────────────────────────
-    for (const f of this.generateBuiltinPrompts(fingerprint)) {
+    // ── .claude/commands/<id>.md ──────────────────────────────────────────
+
+    for (const f of this.generateBuiltinSkills(fingerprint, conventionalCommits)) {
       files.push(f)
     }
 
-    // ── Pack prompts ──────────────────────────────────────────────────────
+    // ── Pack skills as .claude/skills/<pack>-<id>/SKILL.md ───────────────
+
     for (const pkg of installedPackages) {
       for (const skill of skillsForTool(pkg, this.toolId)) {
-        files.push(repoFile(
-          `.github/prompts/${pkg.name}-${skill.id}.prompt.md`,
-          buildPromptFile(skill.name, skill.description, skill.content),
-        ))
+        const packSkillContent = buildSkillFile({
+          id: `${pkg.name}-${skill.id}`,
+          title: skill.name,
+          description: skill.description,
+          content: skill.content,
+          category: 'workflow',
+        })
+        files.push(repoFile(`.claude/skills/${pkg.name}-${skill.id}/SKILL.md`, packSkillContent))
       }
     }
 
-    // ── AI-generated prompts ──────────────────────────────────────────────
+    // ── AI-generated skills as .claude/skills/<id>/SKILL.md ──────────────
+
     if (input.aiSkills && input.aiSkills.length > 0) {
+      files.push(repoFile('.claude/skills.md', buildSkillsOverview(input.aiSkills, input.foreignSkills ?? []), 'merge_sections'))
+
       for (const skill of input.aiSkills) {
-        files.push(repoFile(
-          `.github/prompts/${skill.id}.prompt.md`,
-          buildPromptFile(skill.title, skill.description, skill.content),
-        ))
+        files.push(repoFile(`.claude/skills/${skill.id}/SKILL.md`, buildSkillFile(skill)))
       }
+    } else if (input.foreignSkills && input.foreignSkills.length > 0) {
+      const foreignContent = [
+        '<!-- openskulls:section:foreign_skills -->',
+        '## Manually Maintained Skills',
+        '',
+        '> These files exist in `.claude/commands/` but are not managed by openskulls.',
+        '',
+        ...input.foreignSkills.map((p) => `- \`${p}\``),
+        '',
+        '<!-- /openskulls:section:foreign_skills -->',
+      ].join('\n')
+      files.push(repoFile('.claude/skills.md', foreignContent, 'merge_sections'))
     }
 
     return files
   }
 
-  private generateBuiltinPrompts(fingerprint: RepoFingerprint): GeneratedFile[] {
+  private generateBuiltinSkills(fingerprint: RepoFingerprint, conventionalCommits: boolean): GeneratedFile[] {
     const files: GeneratedFile[] = []
 
     if (fingerprint.testing) {
@@ -74,20 +93,25 @@ export class CopilotGenerator extends BaseGenerator {
       const { framework, pattern } = fingerprint.testing
       const patternLine = pattern ? `\n3. Tests match the pattern \`${pattern}\`.` : ''
       const content = [
+        `---`,
+        `description: Run the full test suite using ${framework}.`,
+        `---`,
+        ``,
         `Run the full test suite.`,
         ``,
         `1. Execute \`${runCmd}\`.`,
         `2. Read any failing test output carefully before attempting a fix.`,
         patternLine.trimStart(),
       ].filter((l) => l !== '').join('\n')
-      files.push(repoFile(
-        '.github/prompts/run-tests.prompt.md',
-        buildPromptFile(`Run Tests (${framework})`, `Run the full test suite using ${framework}.`, content),
-      ))
+      files.push(repoFile('.claude/commands/run-tests.md', content))
     }
 
-    if (isConventionalCommits(fingerprint)) {
+    if (conventionalCommits) {
       const content = [
+        `---`,
+        `description: Create a Conventional Commits formatted git commit for staged changes.`,
+        `---`,
+        ``,
         `Create a git commit using Conventional Commits format.`,
         ``,
         `1. Run \`git diff --staged\` to review what is staged.`,
@@ -96,10 +120,7 @@ export class CopilotGenerator extends BaseGenerator {
         `4. Add a body if the change needs context beyond the subject line.`,
         `5. Run \`git commit -m "<message>"\` with the composed message.`,
       ].join('\n')
-      files.push(repoFile(
-        '.github/prompts/commit.prompt.md',
-        buildPromptFile('Conventional Commit', 'Create a Conventional Commits formatted git commit for staged changes.', content),
-      ))
+      files.push(repoFile('.claude/commands/commit.md', content))
     }
 
     return files
@@ -236,22 +257,3 @@ export function buildCopilotInstructions(
   return lines.join('\n') + '\n'
 }
 
-// ─── Prompt file helper ──────────────────────────────────────────────────────
-
-/**
- * Render `.github/prompts/<id>.prompt.md`.
- *
- * Follows the Copilot reusable prompt convention:
- *  - YAML frontmatter: description
- *  - Body: markdown instructions
- */
-export function buildPromptFile(title: string, description: string, content: string): string {
-  const lines = [
-    '---',
-    `description: "${description}"`,
-    '---',
-    '',
-    content,
-  ]
-  return lines.join('\n')
-}

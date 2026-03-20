@@ -82,11 +82,10 @@ OpenSkulls scans the repo with AI, detects your stack, asks a few workflow quest
 
 - `CLAUDE.md` — structured project context for Claude Code
 - `.github/copilot-instructions.md` — context for GitHub Copilot (if detected)
-- `.github/prompts/` — reusable Copilot prompt files (built-in + AI-generated, if Copilot detected)
 - `.cursor/rules/project.mdc` — context rule for Cursor (if detected)
 - `AGENTS.md` — context for Codex (if detected)
 - `.claude/skills.md` — project-specific AI skills overview
-- `.claude/skills/` — per-skill reference documents (slash commands)
+- `.claude/skills/` — per-skill reference docs (shared across Claude Code and Copilot)
 - `.claude/commands/` — built-in workflow scripts (run-tests, commit)
 - `.openskulls/fingerprint.json` — baseline for drift detection
 - `.openskulls/config.toml` — project configuration
@@ -213,9 +212,9 @@ The second AI call generates project-specific skills: slash commands with rich r
 
 Skills are non-fatal: if the AI call fails, `init` and `sync` continue without them.
 
-#### `.github/prompts/` (Copilot)
+#### Shared skills (Copilot)
 
-When GitHub Copilot is an enabled target, AI-generated skills are also emitted as Copilot reusable prompt files at `.github/prompts/<id>.prompt.md`. Each prompt file has YAML frontmatter with a `description` field and becomes a `/<id>` slash command in Copilot Chat. Built-in prompts (`run-tests`, `commit`) and pack skills are emitted the same way.
+When GitHub Copilot is an enabled target, AI-generated skills are emitted to `.claude/skills/<id>/SKILL.md` — the same path and format used by Claude Code. Built-in skills (`run-tests`, `commit`) go to `.claude/commands/` and pack skills are emitted identically. This means one set of skill files works for both tools.
 
 #### `.claude/commands/`
 
@@ -443,10 +442,9 @@ Context is not one thing. OpenSkulls enforces a clear separation between what be
 [repo]/.openskulls/fingerprint.json    # Drift baseline (committed)
 [repo]/CLAUDE.md                       # Project context (committed)
 [repo]/.claude/skills.md              # AI-generated skills overview (committed)
-[repo]/.claude/skills/                # AI-generated per-skill reference docs (committed)
+[repo]/.claude/skills/                # AI-generated per-skill docs (shared: Claude Code + Copilot)
 [repo]/.claude/commands/              # Built-in and package workflow scripts (committed)
 [repo]/.claude/settings.json          # Claude Code settings (committed)
-[repo]/.github/prompts/               # Copilot reusable prompt files (committed, if Copilot target)
 ```
 
 **Personal context** (`~/.claude/`) is never committed. It follows you across every repo.
@@ -642,7 +640,7 @@ For full module structure, data flow diagrams, config file schemas, and an exten
 | **v0.1** | Core loop: `init`, `sync` — AI-powered analysis — Claude Code, Cursor, Copilot, Codex generators — workflow rules — parallel skill generation — git hook |
 | **v0.2** | Git-native skill packs (`add`, `remove`, `list`) — AI methodology skills (architect, workflow-lifecycle, verify, tdd) — pack skill emission |
 | **v0.3** | Architectural guardrails — Monorepo / multi-workspace support — Foreign file inheritance |
-| **v0.4** | Copilot prompt file generation — skills parity across generators |
+| **v0.4** | Shared skill files across generators — Copilot uses `.claude/skills/` for interoperability |
 | **v0.5** | `openskulls audit` — `openskulls sync --watch` — pack auto-update on sync |
 | **v1.0** | Platform: org-level context — agent performance metrics — multi-agent profiles |
 

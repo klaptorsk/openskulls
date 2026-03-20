@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { CopilotGenerator, buildCopilotInstructions, buildPromptFile } from '../../src/core/generators/copilot.js'
+import { CopilotGenerator, buildCopilotInstructions } from '../../src/core/generators/copilot.js'
 import type { GeneratorInput } from '../../src/core/generators/base.js'
 import { createFingerprint } from '../../src/core/fingerprint/types.js'
 import type { AISkill } from '../../src/core/fingerprint/skills-builder.js'
@@ -333,130 +333,137 @@ describe('buildCopilotInstructions — section ordering', () => {
   })
 })
 
-// ─── Built-in prompt files ──────────────────────────────────────────────────
+// ─── Built-in skill files ───────────────────────────────────────────────────
 
-describe('built-in prompt files', () => {
-  it('generates run-tests.prompt.md when testing is detected', () => {
+describe('built-in skill files', () => {
+  it('generates run-tests.md when testing is detected', () => {
     const fp = makeFingerprint({
       testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
     })
     const files = gen.generate(makeInput({ fingerprint: fp }))
     const paths = files.map((f) => f.relativePath)
-    expect(paths).toContain('.github/prompts/run-tests.prompt.md')
+    expect(paths).toContain('.claude/commands/run-tests.md')
   })
 
-  it('run-tests.prompt.md uses correct command for npm (default)', () => {
+  it('run-tests.md uses correct command for npm (default)', () => {
     const fp = makeFingerprint({
       testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
     })
     const files = gen.generate(makeInput({ fingerprint: fp }))
-    const runTests = files.find((f) => f.relativePath === '.github/prompts/run-tests.prompt.md')!
+    const runTests = files.find((f) => f.relativePath === '.claude/commands/run-tests.md')!
     expect(runTests.content).toContain('npm test')
   })
 
-  it('run-tests.prompt.md uses bun test when bun is the package manager', () => {
+  it('run-tests.md uses bun test when bun is the package manager', () => {
     const fp = makeFingerprint({
       testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
       conventions: [{ name: 'package_manager', value: 'bun', confidence: 'high', evidence: [] }],
     })
     const files = gen.generate(makeInput({ fingerprint: fp }))
-    const runTests = files.find((f) => f.relativePath === '.github/prompts/run-tests.prompt.md')!
+    const runTests = files.find((f) => f.relativePath === '.claude/commands/run-tests.md')!
     expect(runTests.content).toContain('bun test')
   })
 
-  it('does not generate run-tests.prompt.md when testing is absent', () => {
+  it('does not generate run-tests.md when testing is absent', () => {
     const fp = makeFingerprint({ testing: undefined })
     const files = gen.generate(makeInput({ fingerprint: fp }))
     const paths = files.map((f) => f.relativePath)
-    expect(paths).not.toContain('.github/prompts/run-tests.prompt.md')
+    expect(paths).not.toContain('.claude/commands/run-tests.md')
   })
 
-  it('generates commit.prompt.md when conventional commits is detected', () => {
+  it('generates commit.md when conventional commits is detected', () => {
     const fp = makeFingerprint({
       git: { primaryBranch: 'main', contributorsCount: 1, commitStyle: 'conventional_commits' },
     })
     const files = gen.generate(makeInput({ fingerprint: fp }))
     const paths = files.map((f) => f.relativePath)
-    expect(paths).toContain('.github/prompts/commit.prompt.md')
+    expect(paths).toContain('.claude/commands/commit.md')
   })
 
-  it('does not generate commit.prompt.md when conventional commits is absent', () => {
+  it('does not generate commit.md when conventional commits is absent', () => {
     const fp = makeFingerprint({ conventions: [], git: undefined })
     const files = gen.generate(makeInput({ fingerprint: fp }))
     const paths = files.map((f) => f.relativePath)
-    expect(paths).not.toContain('.github/prompts/commit.prompt.md')
+    expect(paths).not.toContain('.claude/commands/commit.md')
   })
 
-  it('prompt files have YAML frontmatter with description', () => {
+  it('skill files have YAML frontmatter with description', () => {
     const fp = makeFingerprint({
       testing: { framework: 'vitest', pattern: '**/*.test.ts', confidence: 'high' },
     })
     const files = gen.generate(makeInput({ fingerprint: fp }))
-    const runTests = files.find((f) => f.relativePath === '.github/prompts/run-tests.prompt.md')!
+    const runTests = files.find((f) => f.relativePath === '.claude/commands/run-tests.md')!
     expect(runTests.content).toMatch(/^---\n/)
     expect(runTests.content).toContain('description:')
   })
 })
 
-// ─── AI-generated prompt files ──────────────────────────────────────────────
+// ─── AI-generated skill files ───────────────────────────────────────────────
 
-describe('AI-generated prompt files', () => {
-  it('emits a .prompt.md per AI skill', () => {
+describe('AI-generated skill files', () => {
+  it('emits a SKILL.md per AI skill under .claude/skills/', () => {
     const skills: AISkill[] = [
       makeSkill({ id: 'add-api-endpoint', title: 'Add API Endpoint', category: 'workflow' }),
       makeSkill({ id: 'write-unit-test', title: 'Write Unit Test', category: 'testing' }),
     ]
     const files = gen.generate(makeInput({ aiSkills: skills }))
     const paths = files.map((f) => f.relativePath)
-    expect(paths).toContain('.github/prompts/add-api-endpoint.prompt.md')
-    expect(paths).toContain('.github/prompts/write-unit-test.prompt.md')
+    expect(paths).toContain('.claude/skills/add-api-endpoint/SKILL.md')
+    expect(paths).toContain('.claude/skills/write-unit-test/SKILL.md')
   })
 
-  it('prompt files use replace strategy', () => {
+  it('emits .claude/skills.md overview when skills are present', () => {
+    const files = gen.generate(makeInput({ aiSkills: [makeSkill()] }))
+    const paths = files.map((f) => f.relativePath)
+    expect(paths).toContain('.claude/skills.md')
+  })
+
+  it('skill files use replace strategy', () => {
     const files = gen.generate(makeInput({ aiSkills: [makeSkill({ id: 'my-skill' })] }))
-    const promptFile = files.find((f) => f.relativePath === '.github/prompts/my-skill.prompt.md')!
-    expect(promptFile.mergeStrategy).toBe('replace')
+    const skillFile = files.find((f) => f.relativePath === '.claude/skills/my-skill/SKILL.md')!
+    expect(skillFile.mergeStrategy).toBe('replace')
   })
 
-  it('prompt files have YAML frontmatter with description', () => {
+  it('skill files have YAML frontmatter with name and description', () => {
     const skill = makeSkill({
       id: 'add-route',
       description: 'Use when adding routes.',
     })
     const files = gen.generate(makeInput({ aiSkills: [skill] }))
-    const content = files.find((f) => f.relativePath === '.github/prompts/add-route.prompt.md')!.content
+    const content = files.find((f) => f.relativePath === '.claude/skills/add-route/SKILL.md')!.content
     expect(content).toMatch(/^---\n/)
-    expect(content).toContain('description: "Use when adding routes."')
+    expect(content).toContain('name: add-route')
+    expect(content).toContain('description: >')
   })
 
-  it('prompt file body contains the generated content', () => {
+  it('skill file body contains the generated content', () => {
     const skill = makeSkill({
       id: 'refactor-module',
       content: '# Refactor a Module\n\n## Core Rules\n\n- Read before editing',
     })
     const files = gen.generate(makeInput({ aiSkills: [skill] }))
-    const content = files.find((f) => f.relativePath === '.github/prompts/refactor-module.prompt.md')!.content
+    const content = files.find((f) => f.relativePath === '.claude/skills/refactor-module/SKILL.md')!.content
     expect(content).toContain('# Refactor a Module')
     expect(content).toContain('Read before editing')
   })
 
-  it('does not emit prompt files when aiSkills is empty', () => {
+  it('does not emit skill files when aiSkills is empty', () => {
     const files = gen.generate(makeInput({ aiSkills: [] }))
-    const promptFiles = files.filter((f) => f.relativePath.startsWith('.github/prompts/'))
-    expect(promptFiles).toHaveLength(0)
+    const skillFiles = files.filter((f) => f.relativePath.startsWith('.claude/skills/'))
+    expect(skillFiles).toHaveLength(0)
   })
 
-  it('does not emit prompt files when aiSkills is absent', () => {
+  it('does not emit skill files when aiSkills is absent', () => {
     const files = gen.generate(makeInput())
-    const promptFiles = files.filter((f) => f.relativePath.startsWith('.github/prompts/'))
-    expect(promptFiles).toHaveLength(0)
+    const skillFiles = files.filter((f) => f.relativePath.startsWith('.claude/skills/'))
+    expect(skillFiles).toHaveLength(0)
   })
 })
 
-// ─── Package prompt files ───────────────────────────────────────────────────
+// ─── Package skill files ─────────────────────────────────────────────────────
 
-describe('package prompt files', () => {
-  it('generates a prompt file for each skill in installed packages', () => {
+describe('package skill files', () => {
+  it('generates a SKILL.md for each skill in installed packages', () => {
     const pkg = makePackage({
       skills: [
         {
@@ -473,7 +480,7 @@ describe('package prompt files', () => {
     })
     const files = gen.generate(makeInput({ installedPackages: [pkg] }))
     const paths = files.map((f) => f.relativePath)
-    expect(paths).toContain('.github/prompts/@test/pkg-review-pr.prompt.md')
+    expect(paths).toContain('.claude/skills/@test/pkg-review-pr/SKILL.md')
   })
 
   it('excludes skills not compatible with copilot', () => {
@@ -502,24 +509,8 @@ describe('package prompt files', () => {
       ],
     })
     const files = gen.generate(makeInput({ installedPackages: [pkg] }))
-    const promptFiles = files.filter((f) => f.relativePath.startsWith('.github/prompts/@test/pkg'))
-    expect(promptFiles).toHaveLength(1)
-    expect(promptFiles[0].relativePath).toBe('.github/prompts/@test/pkg-all-tools.prompt.md')
-  })
-})
-
-// ─── buildPromptFile helper ─────────────────────────────────────────────────
-
-describe('buildPromptFile', () => {
-  it('renders YAML frontmatter with description', () => {
-    const result = buildPromptFile('My Prompt', 'Does something useful.', 'Content here.')
-    expect(result).toMatch(/^---\n/)
-    expect(result).toContain('description: "Does something useful."')
-  })
-
-  it('includes content after frontmatter', () => {
-    const result = buildPromptFile('My Prompt', 'Desc.', '# Instructions\n\nDo the thing.')
-    expect(result).toContain('# Instructions')
-    expect(result).toContain('Do the thing.')
+    const skillFiles = files.filter((f) => f.relativePath.startsWith('.claude/skills/@test/pkg'))
+    expect(skillFiles).toHaveLength(1)
+    expect(skillFiles[0].relativePath).toBe('.claude/skills/@test/pkg-all-tools/SKILL.md')
   })
 })

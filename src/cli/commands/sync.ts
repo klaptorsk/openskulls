@@ -25,7 +25,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { Command } from 'commander'
-import { AIFingerprintCollector, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
+import { AIFingerprintCollector, detectAICLI, type AICLIAdapter, type VerboseLogger } from '../../core/fingerprint/ai-collector.js'
 import { loadFingerprint, saveFingerprint } from '../../core/fingerprint/cache.js'
 import { hasDrifted } from '../../core/fingerprint/types.js'
 import { generateAISkills, type AISkill } from '../../core/fingerprint/skills-builder.js'
@@ -121,7 +121,14 @@ async function interactiveMode(
     ? await loadAllWorkspaceFingerprints(repoRoot, wsEntries.map((e) => e.path))
     : new Map()
 
-  // ── Step 2: Analyse ──────────────────────────────────────────────────────
+  // ── Step 2: Detect AI CLI + Analyse ─────────────────────────────────────
+
+  const adapter: AICLIAdapter = await detectAICLI().catch((err: unknown) =>
+    fatal(
+      'No AI CLI found in PATH.',
+      err instanceof Error ? err.message : 'Install Claude Code, GitHub Copilot, or OpenAI Codex.',
+    )
+  )
 
   const spin = spinner('Analysing repository…').start()
 
@@ -133,7 +140,7 @@ async function interactiveMode(
       onPrompt:   (p) => { analysisCapture.prompt = p },
       onResponse: (r) => { analysisCapture.response = r },
     }
-    fingerprint = await collector.collect(repoRoot, undefined, analysisLogger)
+    fingerprint = await collector.collect(repoRoot, undefined, analysisLogger, adapter)
     spin.succeed('Repository analysed')
   } catch (err) {
     spin.fail('Analysis failed')
@@ -196,7 +203,7 @@ async function interactiveMode(
         onPrompt:   (p) => { skillsCapture.prompt = p },
         onResponse: (r) => { skillsCapture.response = r },
       }
-      aiSkills = await generateAISkills(fingerprint, skillsLogger)
+      aiSkills = await generateAISkills(fingerprint, skillsLogger, undefined, adapter)
       skillsSpin.succeed(`Generated ${aiSkills.length} project skills`)
     } catch (err) {
       skillsSpin.warn('Could not generate skills — skipping')
@@ -218,7 +225,7 @@ async function interactiveMode(
           onPrompt:   (p) => { archCapture.prompt = p },
           onResponse: (r) => { archCapture.response = r },
         }
-        const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger)
+        const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, archLogger, undefined, adapter)
         aiSkills = [architectSkill, ...aiSkills]
         archSpin.succeed('Regenerated architect skill')
       } catch (err) {
@@ -241,7 +248,7 @@ async function interactiveMode(
         onResponse: (r) => { methCapture.response = r },
       }
       const taskIds = aiSkills.map((s) => s.id)
-      const methSkills = await generateMethodologySkills(fingerprint, methLogger, undefined, [], taskIds)
+      const methSkills = await generateMethodologySkills(fingerprint, methLogger, undefined, [], taskIds, adapter)
       aiSkills = [...aiSkills, ...methSkills]
       methSpin.succeed(`Generated ${methSkills.length} methodology skills`)
     } catch (err) {
@@ -301,7 +308,7 @@ async function interactiveMode(
         onPrompt:   (p) => { guardrailsCapture.prompt = p },
         onResponse: (r) => { guardrailsCapture.response = r },
       }
-      architectGuardrails = await generateArchitectGuardrails(fingerprint, guardrailsLogger, undefined, workspaceMap)
+      architectGuardrails = await generateArchitectGuardrails(fingerprint, guardrailsLogger, undefined, workspaceMap, adapter)
       guardrailsSpin.succeed('Generated architectural guardrails')
     } catch (err) {
       guardrailsSpin.warn('Could not generate guardrails — skipping')
@@ -438,9 +445,12 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     const wsConfig = await loadWorkspaceConfig(repoRoot)
     const wsEntries = wsConfig ? await discoverWorkspaces(repoRoot, wsConfig) : []
 
+    // Detect AI CLI once for all subsequent calls
+    const hookAdapter = await detectAICLI()
+
     // Analyse
     const collector = new AIFingerprintCollector()
-    let fingerprint = await collector.collect(repoRoot)
+    let fingerprint = await collector.collect(repoRoot, undefined, undefined, hookAdapter)
 
     // Drift check
     if (!hasDrifted(fingerprint, baseline)) {
@@ -451,7 +461,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     let aiSkills: AISkill[] = []
     if (hookNeedsSkills) {
       try {
-        aiSkills = await generateAISkills(fingerprint)
+        aiSkills = await generateAISkills(fingerprint, undefined, undefined, hookAdapter)
       } catch {
         // Skip silently in hook mode
       }
@@ -459,7 +469,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       // Architect skill (non-fatal)
       if (workflowConfig.architectEnabled) {
         try {
-          const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig)
+          const architectSkill = await generateArchitectSkill(fingerprint, workflowConfig, undefined, undefined, hookAdapter)
           aiSkills = [architectSkill, ...aiSkills]
         } catch {
           // Skip silently in hook mode
@@ -469,7 +479,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
       // Methodology skills (non-fatal)
       try {
         const taskIds = aiSkills.map((s) => s.id)
-        const methSkills = await generateMethodologySkills(fingerprint, undefined, undefined, [], taskIds)
+        const methSkills = await generateMethodologySkills(fingerprint, undefined, undefined, [], taskIds, hookAdapter)
         aiSkills = [...aiSkills, ...methSkills]
       } catch {
         // Skip silently in hook mode
@@ -482,9 +492,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
 
     if (wsEntries.length > 0) {
       try {
-        const { detectAICLI } = await import('../../core/fingerprint/ai-collector.js')
-        const adapter = await detectAICLI()
-        const { results } = await collectWorkspaceFingerprints(repoRoot, wsEntries, adapter, { useParallel: workflowConfig.useSubagents })
+        const { results } = await collectWorkspaceFingerprints(repoRoot, wsEntries, hookAdapter, { useParallel: workflowConfig.useSubagents })
         workspaces = results
         if (workspaces.length > 0) {
           fingerprint = buildAggregateFingerprint(repoRoot, workspaces, fingerprint.description)
@@ -499,7 +507,7 @@ async function hookMode(path: string, changedRaw: string): Promise<void> {
     let architectGuardrails: ArchitectGuardrails | undefined
     if (isComplexProject(fingerprint)) {
       try {
-        architectGuardrails = await generateArchitectGuardrails(fingerprint, undefined, undefined, workspaceMap)
+        architectGuardrails = await generateArchitectGuardrails(fingerprint, undefined, undefined, workspaceMap, hookAdapter)
       } catch {
         // Skip silently in hook mode
       }

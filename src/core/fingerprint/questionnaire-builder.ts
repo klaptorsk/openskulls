@@ -10,7 +10,7 @@
 
 import Handlebars from 'handlebars'
 import { z } from 'zod'
-import { detectAICLI, invokeAICLI, stripJsonFences, type VerboseLogger } from './ai-collector.js'
+import { detectAICLI, invokeAICLI, stripJsonFences, type AICLIAdapter, type VerboseLogger } from './ai-collector.js'
 import type { RepoFingerprint } from './types.js'
 import { QUESTIONNAIRE_TEMPLATE } from '../../generated/templates.js'
 
@@ -128,9 +128,10 @@ export function buildQuestionnairePrompt(fingerprint: RepoFingerprint): string {
 export async function generateQuestionnaire(
   fingerprint: RepoFingerprint,
   logger?: VerboseLogger,
+  adapter?: AICLIAdapter,
 ): Promise<AIQuestion[]> {
   try {
-    const cliCommand = await detectAICLI()
+    const cliCommand = adapter ?? await detectAICLI()
     const prompt = buildQuestionnairePrompt(fingerprint)
     const raw = await invokeAICLI(cliCommand, prompt, 60_000, logger)
     const parsed = AIQuestionnaireResponse.parse(JSON.parse(stripJsonFences(raw)))

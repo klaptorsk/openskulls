@@ -9,7 +9,7 @@
  */
 
 import Handlebars from 'handlebars'
-import { detectAICLI, invokeAICLI, stripJsonFences, type VerboseLogger } from './ai-collector.js'
+import { detectAICLI, invokeAICLI, stripJsonFences, type AICLIAdapter, type VerboseLogger } from './ai-collector.js'
 import { AISkill } from './skills-builder.js'
 import type { RepoFingerprint } from './types.js'
 import type { WorkflowConfig } from '../config/types.js'
@@ -113,8 +113,9 @@ export async function generateArchitectSkill(
   workflowConfig: WorkflowConfig,
   logger?: VerboseLogger,
   qa?: Record<string, string>,
+  adapter?: AICLIAdapter,
 ): Promise<AISkill> {
-  const cliCommand = await detectAICLI()
+  const cliCommand = adapter ?? await detectAICLI()
   const prompt = buildArchitectPrompt(fingerprint, workflowConfig, qa)
   const raw = await invokeAICLI(cliCommand, prompt, undefined, logger)
   return ArchitectSkill.parse(JSON.parse(stripJsonFences(raw)))

@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod'
-import { detectAICLI, invokeAICLI, stripJsonFences, type VerboseLogger } from './ai-collector.js'
+import { detectAICLI, invokeAICLI, stripJsonFences, type AICLIAdapter, type VerboseLogger } from './ai-collector.js'
 import { buildMethodologyPrompt } from './methodology-prompt.js'
 import type { RepoFingerprint } from './types.js'
 import type { AISkill } from './skills-builder.js'
@@ -33,8 +33,9 @@ export async function generateMethodologySkills(
   qa?: Record<string, string>,
   installedPackSkillIds?: string[],
   taskSkillIds?: string[],
+  adapter?: AICLIAdapter,
 ): Promise<AISkill[]> {
-  const cliCommand = await detectAICLI()
+  const cliCommand = adapter ?? await detectAICLI()
   const prompt = buildMethodologyPrompt(fingerprint, qa, installedPackSkillIds, taskSkillIds)
   const raw = await invokeAICLI(cliCommand, prompt, undefined, logger)
   const parsed = MethodologySkillsResponse.parse(JSON.parse(stripJsonFences(raw)))
